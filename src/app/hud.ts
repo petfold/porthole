@@ -77,6 +77,7 @@ export class Hud {
         <div class="small">Hold the screen to brake; that also sets the base position.</div>
         <h2>Eye (S8)</h2>
         <label><input type="checkbox" class="eyes" /> Track the eye with the front camera</label>
+        <div>Viewpoint eye <select class="eyeside"><option value="auto" selected>auto (nearest the screen axis)</option><option value="right">right</option><option value="left">left</option></select></div>
         <div>Rate <select class="eyerate"><option>5</option><option>10</option><option>15</option><option>20</option><option selected>30</option></select> /s</div>
         <div class="small">Calibrate once: hold the phone at a known distance from your eye for a second, then tap. An A4 sheet's long edge is 29.7 cm, its short edge 21.0 cm.</div>
         <button class="cal" data-cm="29.7">A4 long, 29.7 cm</button><button class="cal" data-cm="21.0">A4 short, 21.0 cm</button><button class="cal" data-cm="40">40 cm</button>
@@ -118,6 +119,9 @@ export class Hud {
     const eyes = root.querySelector('.eyes') as HTMLInputElement;
     eyes.checked = d.eyes.tracking;
     eyes.onchange = () => d.onEyes(eyes.checked);
+    const side = root.querySelector('.eyeside') as HTMLSelectElement;
+    side.value = d.eyes.opts.eye;
+    side.onchange = () => { d.eyes.opts.eye = side.value as 'auto' | 'left' | 'right'; };
     const rate = root.querySelector('.eyerate') as HTMLSelectElement;
     rate.value = String(d.eyes.opts.rate);
     rate.onchange = () => d.eyes.setRate(parseInt(rate.value, 10));

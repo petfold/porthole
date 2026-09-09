@@ -57,8 +57,12 @@ async function main(): Promise<void> {
   vehicle.mode = (params.get('mode') as SteerMode | null) ?? 'look';
   vehicle.throttleMode = (params.get('throttle') as ThrottleMode | null) ?? 'displacement';
 
-  const eyes = new EyeTracker({ model: (params.get('model') as 'auto' | 'detector' | 'landmarker' | null) ?? 'auto' });
+  const eyes = new EyeTracker({
+    model: (params.get('model') as 'auto' | 'detector' | 'landmarker' | null) ?? 'auto',
+    eye: (params.get('eyeside') as 'auto' | 'left' | 'right' | null) ?? 'auto',
+  });
   eyes.setDisplacementSource(() => throttle.x);
+  eyes.setOrientationSource(() => orientation.quaternion);
   const startEyes = () => eyes.start().then(() => hud.flash('eye tracking on')).catch((e: Error) => { eyes.status = `failed: ${e.message}`; hud.flash(`eye tracking failed: ${e.message}`); });
 
   const hud = new Hud(hudRoot, {

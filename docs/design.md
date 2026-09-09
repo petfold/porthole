@@ -127,7 +127,9 @@ front camera — iris diameter as the size reference, inertial bridging
 between camera fixes — and renders an off-axis frustum from it, so the
 window widens naturally as the eye comes closer. The viewpoint is the eye
 nearest the screen's centre axis, with hysteresis (D-29); with one eye in
-view, that eye.
+view, that eye. The eye's direction is kept in the world frame and rotated
+into the screen frame with the live gyro orientation (D-33), so turning the
+phone re-shapes the window without waiting for the camera.
 
 ### 4.4 Presence and sync
 

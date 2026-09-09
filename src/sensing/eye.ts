@@ -18,6 +18,7 @@
  *
  * Screen frame (also the device frame): x right, y up, z toward the user.
  */
+import * as THREE from 'three';
 import { RateMeter } from './rate';
 import { OneEuroFilter } from './filter';
 import type { DetectResult, FaceResult, InMsg, OutMsg, Role } from './eye.worker';
@@ -63,6 +64,7 @@ export interface EyeFix {
 }
 
 export type ModelMode = 'auto' | 'detector' | 'landmarker';
+export type EyePreference = 'auto' | 'left' | 'right';
 
 export interface EyeTrackerOptions {
   rate: number;
@@ -73,6 +75,8 @@ export interface EyeTrackerOptions {
   model: ModelMode;
   /** Landmarker duty cycle in 'auto' mode: fraction of wall time it may be busy. */
   landmarkerDuty: number;
+  /** Which eye is the viewpoint: 'auto' = nearest the screen axis with strong hysteresis (D-29). */
+  eye: EyePreference;
 }
 
 function clampAbs(v: number, m: number): number { return Math.max(-m, Math.min(m, v)); }
@@ -137,14 +141,27 @@ export class EyeTracker {
    * hand tremor and keypoint jitter (a few mm) vanish, while a deliberate
    * head move of 10 cm/s raises the cutoff enough to follow without lag.
    */
-  private readonly fx = new OneEuroFilter(0.5, 8, 1);
-  private readonly fy = new OneEuroFilter(0.5, 8, 1);
+  private readonly fdir = [new OneEuroFilter(0.5, 8, 1), new OneEuroFilter(0.5, 8, 1), new OneEuroFilter(0.5, 8, 1)] as const;
+  /**
+   * Phone orientation (device → world) sampled every frame, so a camera fix
+   * taken `t0` ago can be expressed in the world frame with the orientation
+   * the phone had then. The eye barely moves in the world; the phone does.
+   */
+  private orientation: (() => THREE.Quaternion) | null = null;
+  private readonly qHistory: { t: number; q: THREE.Quaternion }[] = [];
+  private readonly qTmp = new THREE.Quaternion();
+  private readonly vTmp = new THREE.Vector3();
+  /** Filtered eye direction in the world frame (unit vector from the screen centre towards the eye). */
+  private readonly dirWorld = new THREE.Vector3(0, 0, 1);
+  private dirValid = false;
+  /** Camera latency assumed between frame capture and the grab timestamp, ms. */
+  private static readonly CAPTURE_LAG_MS = 35;
   private probe: { delegate: Delegate; ms: number[] } | null = null;
   private captureW = 0;
   private captureH = 0;
 
   constructor(opts?: Partial<EyeTrackerOptions>) {
-    this.opts = { rate: 30, cameraOffset: { x: 0, y: 0.072 }, focalNorm: null, delegate: 'auto', model: 'auto', landmarkerDuty: 0.25, ...opts };
+    this.opts = { rate: 30, cameraOffset: { x: 0, y: 0.072 }, focalNorm: null, delegate: 'auto', model: 'auto', landmarkerDuty: 0.25, eye: 'auto', ...opts };
     let stored: number | null = null;
     try { const v = localStorage.getItem(KEY_F); if (v) stored = parseFloat(v) || null; } catch { /* no storage */ }
     this.focalNorm = this.opts.focalNorm ?? stored ?? DEFAULT_FOCAL_NORM;
@@ -154,6 +171,17 @@ export class EyeTracker {
   get captureSize(): { w: number; h: number } { return { w: this.captureW, h: this.captureH }; }
 
   setDisplacementSource(fn: () => number): void { this.displacement = fn; }
+  /** Provide the phone's device→world quaternion; without it the screen frame is treated as fixed. */
+  setOrientationSource(fn: () => THREE.Quaternion): void { this.orientation = fn; }
+
+  /** Orientation the phone had at time `t` (nearest sample), or identity. */
+  private orientationAt(t: number, out: THREE.Quaternion): THREE.Quaternion {
+    const h = this.qHistory;
+    if (!h.length) return out.identity();
+    let best = h[h.length - 1]!;
+    for (let i = h.length - 1; i >= 0; i--) { const e = h[i]!; if (Math.abs(e.t - t) < Math.abs(best.t - t)) best = e; if (e.t < t) break; }
+    return out.copy(best.q);
+  }
   setRate(rate: number): void { this.opts.rate = rate; }
 
   async start(): Promise<void> {
@@ -357,12 +385,16 @@ export class EyeTracker {
     const axisV = H / 2 + (f * this.opts.cameraOffset.y) / z;
     const dA = Math.hypot(A.u - axisU, A.v - axisV), dB = Math.hypot(B.u - axisU, B.v - axisV);
     const sideA: EyeSide = 'right', sideB: EyeSide = 'left';
-    const other: EyeSide = this.chosen === 'left' ? 'right' : 'left';
-    const otherNearer = other === sideA ? dA < dB - 0.35 * ipdPx : dB < dA - 0.35 * ipdPx;
-    if (otherNearer) {
-      if (!this.switchSince) this.switchSince = now;
-      if (now - this.switchSince > 600) { this.chosen = other; this.switchSince = 0; this.reacquiredT = now; }
-    } else this.switchSince = 0;
+    if (this.opts.eye !== 'auto') this.chosen = this.opts.eye;
+    else {
+      const other: EyeSide = this.chosen === 'left' ? 'right' : 'left';
+      // Switch only when the axis has passed the other eye's centre, and stayed there a second.
+      const otherNearer = other === sideA ? dA < dB - 0.6 * ipdPx : dB < dA - 0.6 * ipdPx;
+      if (otherNearer) {
+        if (!this.switchSince) this.switchSince = now;
+        if (now - this.switchSince > 1000) { this.chosen = other; this.switchSince = 0; this.reacquiredT = now; }
+      } else this.switchSince = 0;
+    }
     const E = this.chosen === sideA ? A : B;
     void sideB;
     const x = -((E.u - W / 2) / f) * z + this.opts.cameraOffset.x;
@@ -389,6 +421,14 @@ export class EyeTracker {
       vz = clampAbs((fix.z - phoneMoved - prev.z) / dtFix, 1.5);
     }
     this.fix = { ...fix, vx, vy, vz };
+    // Direction to the eye in the world frame, using the orientation at capture time.
+    this.orientationAt(fix.t - EyeTracker.CAPTURE_LAG_MS, this.qTmp);
+    this.vTmp.set(fix.x, fix.y, fix.z).normalize().applyQuaternion(this.qTmp);
+    if (!this.dirValid || now - this.reacquiredT < 1) { this.dirWorld.copy(this.vTmp); for (let i = 0; i < 3; i++) this.fdir[i]!.set(this.vTmp.getComponent(i), now); this.dirValid = true; }
+    else {
+      for (let i = 0; i < 3; i++) this.dirWorld.setComponent(i, this.fdir[i]!.filter(this.vTmp.getComponent(i), now));
+      this.dirWorld.normalize();
+    }
     this.sizeSamples.push({ iris: irisPx, ipd: ipdCorrPx, t: now });
     if (this.sizeSamples.length > 60) this.sizeSamples.shift();
     this.bridgeAtFix = this.displacement();
@@ -448,12 +488,13 @@ export class EyeTracker {
     const distL = Math.hypot(L.u - axisU, L.v - axisV), distR = Math.hypot(R.u - axisU, R.v - axisV);
     const other: EyeSide = this.chosen === 'left' ? 'right' : 'left';
     const visibleOnly: EyeSide | null = L.visible && !R.visible ? 'left' : R.visible && !L.visible ? 'right' : null;
-    if (visibleOnly && visibleOnly !== this.chosen) { this.chosen = visibleOnly; this.switchSince = 0; }
+    if (this.opts.eye !== 'auto') this.chosen = this.opts.eye;
+    else if (visibleOnly && visibleOnly !== this.chosen) { this.chosen = visibleOnly; this.switchSince = 0; }
     else {
-      const otherNearer = other === 'left' ? distL < distR - 0.35 * ipdPx : distR < distL - 0.35 * ipdPx;
+      const otherNearer = other === 'left' ? distL < distR - 0.6 * ipdPx : distR < distL - 0.6 * ipdPx;
       if (otherNearer && !visibleOnly) {
         if (!this.switchSince) this.switchSince = now;
-        if (now - this.switchSince > 600) { this.chosen = other; this.switchSince = 0; this.reacquiredT = now; }
+        if (now - this.switchSince > 1000) { this.chosen = other; this.switchSince = 0; this.reacquiredT = now; }
       } else this.switchSince = 0;
     }
     const E = this.chosen === 'left' ? L : R;
@@ -502,9 +543,18 @@ export class EyeTracker {
 
   update(dt: number): void {
     const now = performance.now();
+    if (this.orientation) {
+      const h = this.qHistory;
+      const last = h[h.length - 1];
+      if (!last || now - last.t > 8) {
+        const entry = h.length >= 40 ? h.shift()! : { t: 0, q: new THREE.Quaternion() };
+        entry.t = now; entry.q.copy(this.orientation());
+        h.push(entry);
+      }
+    }
     const lostFor = now - this.lastFaceT;
     if (!this.tracking || !this.fix || lostFor > LOST_HOLD_MS) {
-      this.fx.reset(); this.fy.reset();
+      this.dirValid = false;
       const k = 1 - Math.exp(-dt / (this.tracking ? 4 : 0.5));
       this.eye.x += (0 - this.eye.x) * k;
       this.eye.y += (0 - this.eye.y) * k;
@@ -515,14 +565,23 @@ export class EyeTracker {
     const ahead = Math.min(0.15, Math.max(0, (Math.min(now, this.lastFaceT) - f.t) / 1000));
     const phoneMoved = this.displacement() - this.bridgeAtFix;
     const gentle = now - this.reacquiredT < 800;
-    // Distance: dead-reckoned and lightly smoothed (zoom must feel immediate).
-    const tz = Math.max(0.05, f.z + f.vz * ahead + phoneMoved);
+    // Distance (range to the eye): dead-reckoned and lightly smoothed; zoom must feel immediate.
+    const rFix = Math.hypot(f.x, f.y, f.z);
+    const tr = Math.max(0.05, rFix + f.vz * ahead + phoneMoved);
     const k = 1 - Math.exp(-dt / (gentle ? 0.35 : 0.05));
-    this.eye.z += (tz - this.eye.z) * k;
-    // Lateral: no extrapolation, speed-adaptive smoothing; extra gentle after a gap or an eye switch.
-    this.fx.minCutoff = this.fy.minCutoff = gentle ? 0.25 : 0.5;
-    this.eye.x = this.fx.filter(f.x, now);
-    this.eye.y = this.fy.filter(f.y, now);
+    const rPrev = Math.hypot(this.eye.x, this.eye.y, this.eye.z);
+    const r = rPrev + (tr - rPrev) * k;
+    // Direction: the filtered world-frame direction, rotated into the screen frame with the
+    // phone's current orientation. Phone rotation therefore acts instantly; only head motion
+    // goes through the camera's latency and filter.
+    for (const fl of this.fdir) fl.minCutoff = gentle ? 0.25 : 0.5;
+    const q = this.orientation ? this.qTmp.copy(this.orientation()).invert() : this.qTmp.identity();
+    this.vTmp.copy(this.dirWorld).applyQuaternion(q);
+    if (this.vTmp.z < 0.2) this.vTmp.z = 0.2; // never behind the screen
+    this.vTmp.normalize().multiplyScalar(r);
+    this.eye.x = this.vTmp.x;
+    this.eye.y = this.vTmp.y;
+    this.eye.z = this.vTmp.z;
   }
 
   static available(): boolean {
