@@ -25,6 +25,7 @@ export interface HudDeps {
   onStop(): void;
   eyes: EyeTracker;
   onEyes(on: boolean): void;
+  onInertial(on: boolean): void;
   onEyeCalibrate(distanceM: number): void;
 }
 
@@ -77,6 +78,7 @@ export class Hud {
         <div class="small">Hold the screen to brake; that also sets the base position.</div>
         <h2>Eye (S8)</h2>
         <label><input type="checkbox" class="eyes" /> Track the eye with the front camera</label>
+        <label><input type="checkbox" class="inertial" /> Compensate phone translation with the accelerometer (experimental)</label>
         <div>Viewpoint eye <select class="eyeside"><option value="auto" selected>auto (nearest the screen axis)</option><option value="right">right</option><option value="left">left</option></select></div>
         <div>Rate <select class="eyerate"><option>5</option><option>10</option><option>15</option><option>20</option><option selected>30</option></select> /s</div>
         <div class="small">Calibrate once: hold the phone at a known distance from your eye for a second, then tap. An A4 sheet's long edge is 29.7 cm, its short edge 21.0 cm.</div>
@@ -119,6 +121,9 @@ export class Hud {
     const eyes = root.querySelector('.eyes') as HTMLInputElement;
     eyes.checked = d.eyes.tracking;
     eyes.onchange = () => d.onEyes(eyes.checked);
+    const inert = root.querySelector('.inertial') as HTMLInputElement;
+    inert.checked = d.eyes.usesInertial;
+    inert.onchange = () => d.onInertial(inert.checked);
     const side = root.querySelector('.eyeside') as HTMLSelectElement;
     side.value = d.eyes.opts.eye;
     side.onchange = () => { d.eyes.opts.eye = side.value as 'auto' | 'left' | 'right'; d.eyes.rechooseEye(); };

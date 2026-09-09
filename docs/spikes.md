@@ -323,5 +323,22 @@ analysis `node scripts/s8-trace-analyse.mjs`):
 - Face lost for 2 s during a fast yaw; the world-frame direction held and
   the picture followed the gyro correctly, then blended on reacquisition.
 
+Trace session 2 (2026-09-09, translation compensation from the
+accelerometer, D-34, 62 s): Peter: "still jittery, maybe a different kind
+of jitter but maybe a little worse". The trace agrees: the inertial phone
+position moved 0.94 mm per frame (median; p95 3.4 mm) and the phone was
+judged still in only 4 % of frames, i.e. the integrated velocity carried a
+bias of about 5 cm/s. Over the 130 ms between capture and display that is
+6 mm (1° at 33 cm), and it reached the screen unfiltered. Raw fix position
+steps grew from 2.9 mm (rotation-only) to 4.9 mm. No eye switches after the
+lock (D-29 amended) and render stayed at 60 fps.
+
+Response: translation compensation is off by default (`?inertial` or the
+panel enables it); acceleration bias is now removed with a 1.5 s high-pass,
+the velocity leak shortened to 0.5 s, and the current phone position lightly
+smoothed (40 ms) before use. The trace now records raw acceleration and
+rotation rate per frame so the integrator can be tuned offline from the next
+recording rather than on the phone.
+
 Not yet measured: one-eye tracking below about 15 cm (the detector needs
 most of the face).

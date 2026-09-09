@@ -67,8 +67,10 @@ async function main(): Promise<void> {
   eyes.setOrientationSource(() => orientation.quaternion);
   // Phone translation from the accelerometer (D-34), so the eye can be held as a world position.
   const inertial = new InertialPose(() => orientation.quaternion);
-  throttle.onVector((ax, ay, az, dps, dt, now) => inertial.feed(ax, ay, az, dps, dt, now));
-  if (!params.has('noinertial')) eyes.setInertialSource(inertial);
+  let lastAcc: [number, number, number, number] = [0, 0, 0, 0];
+  throttle.onVector((ax, ay, az, dps, dt, now) => { inertial.feed(ax, ay, az, dps, dt, now); lastAcc = [ax, ay, az, dps]; });
+  // Off by default until tuned from traces (trace session 2 showed 5 cm/s velocity bias); `?inertial` or the panel enables it.
+  if (params.has('inertial')) eyes.setInertialSource(inertial);
   const startEyes = () => eyes.start().then(() => hud.flash('eye tracking on')).catch((e: Error) => { eyes.status = `failed: ${e.message}`; hud.flash(`eye tracking failed: ${e.message}`); });
 
   const hud = new Hud(hudRoot, {
@@ -85,6 +87,7 @@ async function main(): Promise<void> {
     onStop: () => stop(),
     eyes,
     onEyes: (on) => { if (on) startEyes(); else { eyes.stop(); hud.flash('eye tracking off'); } },
+    onInertial: (on) => { eyes.setInertialSource(on ? inertial : null); hud.flash(`translation compensation ${on ? 'on' : 'off'}`); },
     onEyeCalibrate: (m) => { const n = eyes.calibrate(m); hud.flash(n ? `calibrated at ${(m * 100).toFixed(1)} cm from ${n} samples: f = ${eyes.focalPx.toFixed(0)} px` : 'hold still with your face in view, then try again'); },
   });
 
@@ -169,6 +172,9 @@ async function main(): Promise<void> {
         pw: [inertial.position.x, inertial.position.y, inertial.position.z].map((v) => Math.round(v * 1e4) / 1e4),
         vw: Math.round(inertial.velocity.length() * 1e3) / 1e3,
         still: inertial.still ? 1 : 0,
+        acc: lastAcc.map((v) => Math.round(v * 1e3) / 1e3),
+        bias: [inertial.bias.x, inertial.bias.y, inertial.bias.z].map((v) => Math.round(v * 1e3) / 1e3),
+        inertial: eyes.usesInertial ? 1 : 0,
         disp: Math.round(throttle.x * 1e4) / 1e4,
       };
       if (f && f.t !== lastFixT) {

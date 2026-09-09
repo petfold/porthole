@@ -168,7 +168,10 @@ export class EyeTracker {
   readonly eyeWorld = new THREE.Vector3();
   readonly eyeWorldRaw = new THREE.Vector3();
   private eyeWorldValid = false;
-  private readonly fpos = [new OneEuroFilter(0.5, 6, 1), new OneEuroFilter(0.5, 6, 1), new OneEuroFilter(0.5, 6, 1)] as const;
+  private readonly fpos = [new OneEuroFilter(0.5, 3, 1), new OneEuroFilter(0.5, 3, 1), new OneEuroFilter(0.5, 3, 1)] as const;
+  /** Lightly smoothed current phone position, so sample-level integrator noise does not reach the screen. */
+  private readonly pNow = new THREE.Vector3();
+  private pNowValid = false;
   private readonly pTmp = new THREE.Vector3();
   private dirValid = false;
   /**
@@ -197,7 +200,8 @@ export class EyeTracker {
   /** Provide the phone's device→world quaternion; without it the screen frame is treated as fixed. */
   setOrientationSource(fn: () => THREE.Quaternion): void { this.orientation = fn; }
   /** Provide the phone's inertial position; with it, phone translation is compensated too (D-34). */
-  setInertialSource(pose: InertialPose): void { this.inertial = pose; }
+  setInertialSource(pose: InertialPose | null): void { this.inertial = pose; this.eyeWorldValid = false; this.pNowValid = false; }
+  get usesInertial(): boolean { return this.inertial !== null; }
 
   /** Orientation the phone had at time `t` (nearest sample), or identity. */
   private orientationAt(t: number, out: THREE.Quaternion): THREE.Quaternion {
@@ -608,7 +612,9 @@ export class EyeTracker {
       // Screen-frame eye = R(now)^-1 · (eyeWorld − phonePosition(now)). Phone rotation and translation
       // since the fix are both compensated by the sensors; the camera only tracks head motion.
       const q = this.orientation ? this.qTmp.copy(this.orientation()).invert() : this.qTmp.identity();
-      this.vTmp.copy(this.eyeWorld).sub(this.inertial.position).applyQuaternion(q);
+      if (!this.pNowValid) { this.pNow.copy(this.inertial.position); this.pNowValid = true; }
+      else this.pNow.lerp(this.inertial.position, 1 - Math.exp(-dt / 0.04));
+      this.vTmp.copy(this.eyeWorld).sub(this.pNow).applyQuaternion(q);
       if (this.vTmp.z < 0.05) this.vTmp.z = 0.05;
       this.eye.x = this.vTmp.x;
       this.eye.y = this.vTmp.y;

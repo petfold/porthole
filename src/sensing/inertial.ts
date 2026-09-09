@@ -12,6 +12,8 @@
 import * as THREE from 'three';
 
 export interface InertialTuning {
+  /** Time constant of the acceleration bias estimate (high-pass), s. Hand-held use has zero mean acceleration. */
+  biasTau: number;
   stillAccel: number;   // m/s²
   stillDps: number;     // deg/s
   stillMs: number;      // ms quiet before velocity is zeroed
@@ -22,13 +24,14 @@ export interface InertialTuning {
 }
 
 export const DEFAULT_INERTIAL_TUNING: InertialTuning = {
-  stillAccel: 0.3,
+  biasTau: 1.5,
+  stillAccel: 0.35,
   stillDps: 40,
-  stillMs: 250,
-  stillSpeed: 0.12,
-  stillForceMs: 900,
-  velocityTau: 2,
-  positionTau: 20,
+  stillMs: 200,
+  stillSpeed: 0.08,
+  stillForceMs: 700,
+  velocityTau: 0.5,
+  positionTau: 10,
 };
 
 export class InertialPose {
@@ -37,14 +40,24 @@ export class InertialPose {
   still = true;
   private stillSince = 0;
   private readonly aWorld = new THREE.Vector3();
+  /** Running estimate of the accelerometer bias (device frame). */
+  readonly bias = new THREE.Vector3();
+  private samples = 0;
   private readonly history: { t: number; p: THREE.Vector3 }[] = [];
   private lastHistT = 0;
 
   constructor(private readonly orientation: () => THREE.Quaternion, public tuning: InertialTuning = { ...DEFAULT_INERTIAL_TUNING }) {}
 
   /** Feed one gravity-free acceleration sample in the device frame. */
-  feed(ax: number, ay: number, az: number, rotationDps: number, dt: number, now: number): void {
+  feed(axRaw: number, ayRaw: number, azRaw: number, rotationDps: number, dt: number, now: number): void {
     const t = this.tuning;
+    // Bias removal: over a second or two a hand-held phone has zero mean acceleration.
+    const kb = 1 - Math.exp(-dt / t.biasTau);
+    this.bias.x += (axRaw - this.bias.x) * kb;
+    this.bias.y += (ayRaw - this.bias.y) * kb;
+    this.bias.z += (azRaw - this.bias.z) * kb;
+    this.samples++;
+    const ax = axRaw - this.bias.x, ay = ayRaw - this.bias.y, az = azRaw - this.bias.z;
     const mag = Math.hypot(ax, ay, az);
     if (mag < t.stillAccel && rotationDps < t.stillDps) {
       if (!this.stillSince) this.stillSince = now;
