@@ -35,6 +35,10 @@ export interface EyeFix {
   vz: number;
   eye: EyeSide;
   irisPx: number;
+  /** Both iris sizes and the pupil spacing in pixels, for calibration records. */
+  irisLeftPx: number;
+  irisRightPx: number;
+  ipdPx: number;
   /** Distance from the IPD cue when both eyes were visible, else null. */
   ipdDistance: number | null;
   t: number;
@@ -157,6 +161,18 @@ export class EyeTracker {
     this.opts.rate = rate;
   }
 
+  /** Median iris size (px) over the last `ms`, with the sample count. */
+  recentIris(ms = 1500): { median: number; n: number } {
+    const now = performance.now();
+    const r = this.irisSamples.filter((s) => now - s.t < ms).map((s) => s.px).sort((a, b) => a - b);
+    return { median: r.length ? (r[Math.floor(r.length / 2)] as number) : 0, n: r.length };
+  }
+
+  /** Video capture size, for records. */
+  get captureSize(): { w: number; h: number } {
+    return { w: this.video?.videoWidth ?? 0, h: this.video?.videoHeight ?? 0 };
+  }
+
   /**
    * Calibrate the focal length: the user holds the phone at `distanceM` from
    * the eye. Uses the median iris size of the last 1.5 s so one noisy frame
@@ -173,6 +189,7 @@ export class EyeTracker {
     if (this.fix) {
       const scale = distanceM / this.fix.z;
       this.fix = { ...this.fix, x: this.fix.x * scale, y: this.fix.y * scale, z: distanceM, vx: 0, vy: 0, vz: 0 };
+      this.bridgeBase = distanceM;
       this.bridgeBase = distanceM;
       this.bridgeAtFix = this.displacement();
     }
@@ -251,7 +268,7 @@ export class EyeTracker {
       vy = clampAbs((y - prev.y) / dtFix, 1.5);
       vz = clampAbs((z - phoneMoved - prev.z) / dtFix, 1.5);
     }
-    this.fix = { x, y, z, vx, vy, vz, eye: this.chosen, irisPx: E.d, ipdDistance, t: t0 };
+    this.fix = { x, y, z, vx, vy, vz, eye: this.chosen, irisPx: E.d, irisLeftPx: L.d, irisRightPx: R.d, ipdPx, ipdDistance, t: t0 };
     this.irisSamples.push({ px: E.d, t: now });
     if (this.irisSamples.length > 60) this.irisSamples.shift();
     this.bridgeAtFix = this.displacement();

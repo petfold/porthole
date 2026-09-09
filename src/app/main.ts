@@ -9,6 +9,7 @@ import { Vehicle, type SteerMode, type ThrottleMode } from './vehicle';
 import { Hud } from './hud';
 import { Minimap } from './minimap';
 import { EyeTracker } from '../sensing/eye';
+import { calibrationMode } from './calibrate';
 
 const params = new URLSearchParams(location.search);
 // Worlds live under ./worlds/<name>/world.json; later a Swarm reference goes here.
@@ -16,6 +17,7 @@ const worldUrl = params.get('world') ?? './worlds/paris-eiffel/world.json';
 const forceOrientation = params.get('orientation') as OrientationKind | null;
 
 async function main(): Promise<void> {
+  if (params.has('calibrate')) return calibrationMode();
   const canvas = document.getElementById('view') as HTMLCanvasElement;
   const hudRoot = document.getElementById('hud') as HTMLElement;
   const startEl = document.getElementById('start') as HTMLElement;
