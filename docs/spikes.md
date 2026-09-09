@@ -170,6 +170,10 @@ Try, on the Pixel 7a in Vanadium:
    10 fps and 30 fps inference.
 4. Measure the frame rate of the three.js render while inference runs.
 5. Run five minutes and read the battery drain and thermal state.
+6. Viewpoint eye (D-29): at 40, 20 and 10 cm, look through the window with
+   the left eye, then the right, and check that the chosen eye follows
+   without flicker; note how often it flips while looking straight at the
+   screen with both eyes open.
 
 Exit: distance error under 10 % from 40 cm down to 10 cm; the estimator
 keeps working with one eye in frame; render stays at 60 fps with 10 fps
