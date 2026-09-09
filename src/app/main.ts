@@ -5,7 +5,7 @@ import { chooseOrientation, rollOf, yawOf, type OrientationKind, type Orientatio
 import { ThrottleGesture } from '../sensing/motion';
 import { SensorProbe } from '../sensing/probe';
 import { TouchControls } from '../sensing/touch';
-import { Vehicle, type SteerMode } from './vehicle';
+import { Vehicle, type SteerMode, type ThrottleMode } from './vehicle';
 import { Hud } from './hud';
 
 const params = new URLSearchParams(location.search);
@@ -31,18 +31,22 @@ async function main(): Promise<void> {
   await new Promise<void>((resolve) => { startBtn.onclick = () => resolve(); });
   startEl.remove();
   document.documentElement.requestFullscreen?.().catch(() => { /* optional */ });
+  keepScreenAwake();
 
   let orientation: OrientationSource;
   let orientationLog: string[];
   ({ source: orientation, log: orientationLog } = await chooseOrientation(canvas, forceOrientation ?? undefined));
+  throttle.orientation = orientation.quaternion;
   throttle.start();
   probe.start();
+  if (orientation.kind === 'drag') showSensorBanner(orientationLog);
 
   const spawnHeading = THREE.MathUtils.degToRad(world.spawn.heading);
   const spawnPos = new THREE.Vector3(...world.spawn.position);
   const respawn = () => vehicle.spawn(spawnPos, spawnHeading, yawOf(orientation.quaternion));
   respawn();
   vehicle.mode = (params.get('mode') as SteerMode | null) ?? 'look';
+  vehicle.throttleMode = (params.get('throttle') as ThrottleMode | null) ?? 'displacement';
 
   const hud = new Hud(hudRoot, {
     vehicle,
@@ -52,9 +56,20 @@ async function main(): Promise<void> {
     probe,
     window: view.window,
     onMode: (m) => { vehicle.setMode(m, yawOf(orientation.quaternion)); hud.flash(`mode: ${m}`); },
+    onThrottleMode: (m) => { vehicle.throttleMode = m; throttle.rebase(); vehicle.targetSpeed = 0; hud.flash(`throttle: ${m}`); },
     onRecentre: () => recentre(),
     onRespawn: () => { respawn(); hud.flash('respawned'); },
+    onStop: () => stop(),
   });
+
+  /** Stop dead and make the current phone position the new base. */
+  const stop = () => {
+    vehicle.speed = 0;
+    vehicle.targetSpeed = 0;
+    throttle.rebase();
+    hud.flash('stopped · base reset');
+    navigator.vibrate?.(20);
+  };
 
   const recentre = () => {
     const did = vehicle.recentre(yawOf(orientation.quaternion));
@@ -63,12 +78,14 @@ async function main(): Promise<void> {
   };
 
   throttle.onImpulse((i) => {
+    if (vehicle.throttleMode !== 'impulse') return;
     vehicle.addImpulse(i.value);
     hud.flash(`${i.value > 0 ? 'push' : 'pull'} ${Math.abs(i.value).toFixed(2)} m/s`);
   });
 
   new TouchControls(canvas, {
-    onBrake: (b) => { vehicle.braking = b; },
+    // Holding the screen brakes and makes the current phone position the base.
+    onBrake: (b) => { vehicle.braking = b; if (b) { throttle.rebase(); vehicle.targetSpeed = 0; } },
     onRecentre: recentre,
     onImpulse: (v) => vehicle.addImpulse(v),
   }).start();
@@ -82,6 +99,7 @@ async function main(): Promise<void> {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     const q = orientation.quaternion;
+    vehicle.setDisplacement(throttle.x);
     vehicle.update(dt, yawOf(q), rollOf(q));
     probe.trackDrift(q, now);
 
@@ -94,6 +112,28 @@ async function main(): Promise<void> {
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
+}
+
+/** Hold a screen wake lock while the app is visible; re-acquire after tab switches. */
+function keepScreenAwake(): void {
+  const wl = (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<{ release(): Promise<void> }> } }).wakeLock;
+  if (!wl) return;
+  const acquire = () => { if (document.visibilityState === 'visible') wl.request('screen').catch(() => { /* not granted */ }); };
+  acquire();
+  document.addEventListener('visibilitychange', acquire);
+}
+
+function showSensorBanner(log: string[]): void {
+  const el = document.createElement('div');
+  el.className = 'banner';
+  el.innerHTML =
+    `<b>No motion sensors: drag to look.</b><br>${log.map((l) => l.replace(/</g, '&lt;')).join('<br>')}<br>` +
+    `Vanadium: tap the icon left of the address bar → Permissions → <b>Motion sensors</b> → Allow. ` +
+    `GrapheneOS: Settings → Apps → Vanadium → Permissions → Sensors. Then retry.<br>` +
+    `<button class="retry">Retry</button> <button class="dismiss">Dismiss</button>`;
+  (el.querySelector('.retry') as HTMLButtonElement).onclick = () => location.reload();
+  (el.querySelector('.dismiss') as HTMLButtonElement).onclick = () => el.remove();
+  document.body.appendChild(el);
 }
 
 main().catch((e) => {

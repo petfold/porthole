@@ -2,16 +2,36 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
   font: 14px/1.4 system-ui, sans-serif; -webkit-user-select: none; user-select: none; }
 #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #hud { position: fixed; inset: 0; pointer-events: none; }
-#hud .status { position: absolute; left: 8px; bottom: 8px; padding: 4px 8px; background: rgba(0,0,0,.45);
-  border-radius: 6px; font-variant-numeric: tabular-nums; white-space: pre; }
-#hud .gear { position: absolute; right: 8px; top: 8px; pointer-events: auto; width: 40px; height: 40px;
-  border-radius: 20px; border: 0; background: rgba(0,0,0,.45); color: #eee; font-size: 20px; }
-#hud .panel { position: absolute; right: 8px; top: 56px; bottom: 56px; width: min(360px, calc(100vw - 16px));
+#hud .status { position: absolute; left: 8px; top: calc(8px + env(safe-area-inset-top, 0px)); padding: 4px 8px;
+  background: rgba(0,0,0,.45); border-radius: 6px; font-variant-numeric: tabular-nums; white-space: pre; font-size: 12px; opacity: .8; }
+#hud .stop { position: absolute; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); pointer-events: auto;
+  width: 59px; height: 59px; border: 0; padding: 0; color: #fff; font: inherit; font-size: 12px; font-weight: 700;
+  letter-spacing: .05em; touch-action: none;
+  /* Regular octagon with a white rim, like the road sign: outer red octagon, inner border via a second background layer. */
+  clip-path: polygon(29.3% 0, 70.7% 0, 100% 29.3%, 100% 70.7%, 70.7% 100%, 29.3% 100%, 0 70.7%, 0 29.3%);
+  background: #c8281e; }
+#hud .stop::before { content: ""; position: absolute; inset: 3px; z-index: -1; }
+#hud .stop { position: absolute; isolation: isolate; box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px #c8281e; }
+#hud .stop:active { background: #ff5040; }
+#hud .gauge { position: absolute; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  width: min(55vw, 420px); text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+#hud .gauge .speed { font-size: 34px; font-weight: 300; font-variant-numeric: tabular-nums; line-height: 1.1; }
+#hud .gauge .speed .unit { font-size: 16px; opacity: .8; }
+#hud .gauge .speed .num.reverse::before { content: "◂ "; font-size: 20px; }
+#hud .gauge .bar { position: relative; height: 10px; margin-top: 6px; background: rgba(0,0,0,.45); border-radius: 5px; overflow: visible; }
+#hud .gauge .fill { position: absolute; top: 0; height: 100%; background: #9ee37d; border-radius: 5px; }
+#hud .gauge .fill.braking { background: #f06a5a; }
+#hud .gauge .zero { position: absolute; top: -3px; height: 16px; width: 2px; background: rgba(255,255,255,.7); left: 20%; }
+#hud .gauge .target { position: absolute; top: -4px; width: 4px; height: 18px; margin-left: -2px; background: #fff; border-radius: 2px; }
+#hud .gear { position: absolute; right: 8px; top: calc(8px + env(safe-area-inset-top, 0px)); pointer-events: auto;
+  width: 48px; height: 48px; border-radius: 24px; border: 0; background: rgba(0,0,0,.55); color: #eee; font-size: 24px; }
+#hud .panel { position: absolute; right: 8px; top: calc(64px + env(safe-area-inset-top, 0px)); bottom: 56px; width: min(360px, calc(100vw - 16px));
   overflow: auto; padding: 10px; background: rgba(0,0,0,.8); border-radius: 8px; pointer-events: auto; }
 #hud .panel h2 { font-size: 14px; margin: 10px 0 4px; }
 #hud .panel table { border-collapse: collapse; width: 100%; font-size: 12px; }
 #hud .panel td, #hud .panel th { padding: 2px 4px; text-align: left; border-bottom: 1px solid #333; }
-#hud .panel button, #hud .panel select { font: inherit; padding: 6px 10px; margin: 2px 4px 2px 0; }
+#hud .panel button, #hud .panel select { font: inherit; padding: 8px 12px; margin: 2px 4px 2px 0; }
+#hud .panel .close { width: 100%; background: #eee; color: #000; border: 0; border-radius: 6px; }
 #hud .panel input[type=range] { width: 100%; }
 #hud .card { height: 12px; background: #f1c40f; margin: 6px 0; }
 #hud .warn { color: #f6b26b; }
@@ -22,3 +42,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 #start .small { opacity: .6; font-size: 12px; }
 #start button { font: inherit; font-size: 18px; padding: 12px 28px; border-radius: 24px; border: 0;
   background: #eee; color: #000; margin: 16px 0; }
+
+.banner { position: fixed; left: 8px; right: 8px; top: calc(8px + env(safe-area-inset-top, 0px)); padding: 10px 12px;
+  background: rgba(120,40,0,.9); color: #fff; border-radius: 8px; font-size: 13px; z-index: 10; }
+.banner button { font: inherit; padding: 8px 12px; margin: 8px 6px 0 0; border: 0; border-radius: 6px; }

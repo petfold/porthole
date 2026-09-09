@@ -32,12 +32,12 @@ context). Tap to start.
   persists; the vehicle coasts.
 - **Brake:** touch and hold the screen.
 - **Recentre:** double-tap (only matters in the `yawrate` steering mode).
-- **Settings:** the gear at top right, or add `?debug` to the URL. Shows
+- **Settings:** the gear at top right, or add `?panel` to the URL. Shows
   sensor availability and rates, throttle impulses, the FOV calibration bar
   (match it to a bank card), and the steering mode selector.
 
 URL options: `?mode=look|yawrate|roll`, `?orientation=generic-sensor|deviceorientation|drag`,
-`?world=./worlds/shapes/world.json`, `?debug`.
+`?world=./worlds/shapes/world.json`, `?panel` (open the settings panel at start).
 
 ## Try it on a desktop
 

@@ -15,6 +15,13 @@ import * as THREE from 'three';
 
 export type SteerMode = 'look' | 'yawrate' | 'roll';
 
+/**
+ * 'displacement': speed is proportional to how far the phone is held from its
+ *                 base position (a joystick in space). Default.
+ * 'impulse':      each push or pull adds or subtracts speed; the vehicle coasts.
+ */
+export type ThrottleMode = 'displacement' | 'impulse';
+
 export interface VehicleTuning {
   maxSpeed: number;        // m/s forward
   maxReverse: number;      // m/s backward
@@ -23,6 +30,10 @@ export interface VehicleTuning {
   yawRateGain: number;     // rad/s of turn per rad of handlebar (yawrate mode)
   rollRateGain: number;    // rad/s of turn per rad of bank (roll mode)
   rollDeadband: number;    // rad
+  /** Displacement mode: metres of push for full speed, and the deadband. */
+  fullSpeedAt: number;     // m
+  displacementDeadband: number; // m
+  speedTau: number;        // s, smoothing toward the target speed
 }
 
 export const DEFAULT_VEHICLE_TUNING: VehicleTuning = {
@@ -33,6 +44,9 @@ export const DEFAULT_VEHICLE_TUNING: VehicleTuning = {
   yawRateGain: 1.2,
   rollRateGain: 1.0,
   rollDeadband: 0.08,
+  fullSpeedAt: 0.12,
+  displacementDeadband: 0.015,
+  speedTau: 0.12,
 };
 
 export function forwardOf(heading: number, out = new THREE.Vector3()): THREE.Vector3 {
@@ -49,6 +63,9 @@ export class Vehicle {
   speed = 0;
   braking = false;
   mode: SteerMode = 'look';
+  throttleMode: ThrottleMode = 'displacement';
+  /** Displacement mode: target speed set each frame from the phone displacement. */
+  targetSpeed = 0;
   /** Rotation of the world about Y relative to the sensor frame (radians). */
   viewOffset = 0;
   /** Phone yaw that means "straight ahead" (yawrate mode). */
@@ -74,7 +91,18 @@ export class Vehicle {
   }
 
   addImpulse(value: number): void {
+    if (this.throttleMode !== 'impulse') return;
     this.speed = THREE.MathUtils.clamp(this.speed + value * this.tuning.impulseGain, -this.tuning.maxReverse, this.tuning.maxSpeed);
+  }
+
+  /** Displacement mode: map phone displacement (m, positive = away) to a target speed. */
+  setDisplacement(x: number): void {
+    if (this.throttleMode !== 'displacement') return;
+    const t = this.tuning;
+    const db = t.displacementDeadband;
+    const d = Math.abs(x) > db ? x - Math.sign(x) * db : 0;
+    const f = THREE.MathUtils.clamp(d / (t.fullSpeedAt - db), -1, 1);
+    this.targetSpeed = f >= 0 ? f * t.maxSpeed : f * t.maxReverse;
   }
 
   /** Switch mode without moving the view. */
@@ -121,6 +149,10 @@ export class Vehicle {
     if (this.braking) {
       this.speed *= Math.exp(-dt / this.tuning.brakeTau);
       if (Math.abs(this.speed) < 0.05) this.speed = 0;
+    } else if (this.throttleMode === 'displacement') {
+      const k = 1 - Math.exp(-dt / this.tuning.speedTau);
+      this.speed += (this.targetSpeed - this.speed) * k;
+      if (Math.abs(this.speed) < 0.02 && this.targetSpeed === 0) this.speed = 0;
     }
 
     forwardOf(this.heading, this.fwd);

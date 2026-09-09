@@ -94,8 +94,13 @@ angle and the heading turns at a proportional rate, the view being the phone
 relative to the vehicle; `roll` — banking the phone steers and yaw looks
 freely. D-10 is settled after trying them on a phone.
 
-**Throttle.** A push of the phone away from the body adds to vehicle speed;
-a pull subtracts. Read `devicemotion` linear acceleration along the screen
+**Throttle.** Default (D-24): the phone is a joystick in space. Its
+displacement from a base position along the screen normal sets the target
+speed — hold it out to go, further for faster, bring it back to stop, pull
+in to reverse. Displacement is estimated by integrating linear acceleration
+with zero-velocity updates while the phone is still; holding the screen
+brakes and re-bases. The alternative `impulse` model: a push of the phone
+away from the body adds to vehicle speed; a pull subtracts. Read `devicemotion` linear acceleration along the screen
 normal, in the *device* frame, so orientation error cannot leak gravity into
 the reading. Integrate the first half of the gesture (until the sign flips)
 to get an impulse; add it to speed, clamped. Then wait until the phone is

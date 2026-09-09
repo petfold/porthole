@@ -65,7 +65,7 @@ export class GenericSensorOrientation implements OrientationSource {
         };
         s.start();
         // If no reading comes within 1.5 s, treat as unavailable.
-        setTimeout(() => { if (!settled) { settled = true; this.stop(); reject(new Error('no readings')); } }, 1500);
+        setTimeout(() => { if (!settled) { settled = true; this.stop(); reject(new Error('no readings in 2 s')); } }, 2000);
       } catch (e) {
         reject(e);
       }
@@ -109,14 +109,16 @@ export class DeviceOrientationSource implements OrientationSource {
   async start(): Promise<void> {
     // iOS needs an explicit permission; Chromium does not have this method.
     const DOE = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> };
+    let note = '';
     if (typeof DOE.requestPermission === 'function') {
-      const r = await DOE.requestPermission().catch(() => 'denied');
-      if (r !== 'granted') throw new Error('deviceorientation permission denied');
+      const r = await DOE.requestPermission().catch(() => 'error');
+      if (r !== 'granted') note = ` (requestPermission: ${r})`;
     }
+    // Listen regardless of the permission answer; some builds answer wrongly.
     window.addEventListener('deviceorientation', this.onEvent);
     await new Promise<void>((resolve, reject) => {
       this.resolveFirst = resolve;
-      setTimeout(() => { if (!this.ready) { this.stop(); reject(new Error('no readings')); } }, 1500);
+      setTimeout(() => { if (!this.ready) { this.stop(); reject(new Error(`no readings in 2 s${note}`)); } }, 2000);
     });
   }
 

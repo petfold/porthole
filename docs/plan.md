@@ -15,7 +15,7 @@ are closed in `decisions.md`.
 ## Phase 1a — the window, local world (current)
 
 A single phone, a primitive world shipped with the bundle, correct rotation,
-a vehicle (D-21). Spikes S1, S6, S7 run inside the app's `?debug` panel.
+a vehicle (D-21). Spikes S1, S6, S7 run inside the app's settings panel (gear icon or `?panel`).
 
 - `world.json` with boxes, pyramids, a cylinder, a sphere; loaded from
   `./worlds/shapes/`.

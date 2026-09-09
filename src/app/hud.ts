@@ -1,5 +1,5 @@
 /**
- * On-screen status line plus a debug panel (gear button, or `?debug`).
+ * On-screen status line plus a debug panel (gear button, or `?panel`).
  * The panel doubles as the Phase 0 sensor spike (S1, S6, S7): it lists
  * which APIs exist, their rates, recent throttle impulses, and the FOV
  * calibration.
@@ -7,7 +7,7 @@
 import type { OrientationSource } from '../sensing/orientation';
 import type { ThrottleGesture } from '../sensing/motion';
 import type { WindowCamera } from '../render/camera';
-import type { SteerMode, Vehicle } from './vehicle';
+import type { SteerMode, ThrottleMode, Vehicle } from './vehicle';
 import type { SensorProbe } from '../sensing/probe';
 
 export interface HudDeps {
@@ -18,8 +18,10 @@ export interface HudDeps {
   probe: SensorProbe;
   window: WindowCamera;
   onMode(mode: SteerMode): void;
+  onThrottleMode(mode: ThrottleMode): void;
   onRecentre(): void;
   onRespawn(): void;
+  onStop(): void;
 }
 
 const CARD_MM = 85.6; // ISO/IEC 7810 ID-1 long edge
@@ -27,6 +29,9 @@ const CARD_MM = 85.6; // ISO/IEC 7810 ID-1 long edge
 export class Hud {
   private readonly root: HTMLElement;
   private readonly status: HTMLElement;
+  private readonly speedNum: HTMLElement;
+  private readonly fill: HTMLElement;
+  private readonly target: HTMLElement;
   private readonly panel: HTMLElement;
   private readonly dyn: HTMLElement;
   private readonly card: HTMLElement;
@@ -39,11 +44,18 @@ export class Hud {
 
   constructor(root: HTMLElement, private readonly d: HudDeps) {
     this.root = root;
-    this.open = new URLSearchParams(location.search).has('debug');
+    // The panel starts closed; `?panel` opens it for spike sessions.
+    this.open = new URLSearchParams(location.search).has('panel');
     root.innerHTML = `
       <div class="status"></div>
+      <div class="gauge">
+        <div class="speed"><span class="num">0.0</span><span class="unit"> m/s</span></div>
+        <div class="bar"><div class="zero"></div><div class="fill"></div><div class="target"></div></div>
+      </div>
+      <button class="stop" aria-label="stop">STOP</button>
       <button class="gear" aria-label="settings">⚙</button>
       <div class="panel" hidden>
+        <button class="close">Close panel</button>
         <h2>Steering (D-10 feel test)</h2>
         <select class="mode">
           <option value="look">look: go where you look</option>
@@ -52,6 +64,12 @@ export class Hud {
         </select>
         <button class="recentre">Recentre</button>
         <button class="respawn">Respawn</button>
+        <h2>Throttle</h2>
+        <select class="throttle">
+          <option value="displacement">displacement: hold the phone out to go</option>
+          <option value="impulse">impulse: push to add speed, coast</option>
+        </select>
+        <div class="small">Hold the screen to brake; that also sets the base position.</div>
         <h2>Window (S7)</h2>
         <div>Match the bar to the long edge of a bank card (${CARD_MM} mm), then check the FOV.</div>
         <div class="card"></div>
@@ -62,6 +80,9 @@ export class Hud {
         <div class="dyn"></div>
       </div>`;
     this.status = root.querySelector('.status') as HTMLElement;
+    this.speedNum = root.querySelector('.gauge .num') as HTMLElement;
+    this.fill = root.querySelector('.gauge .fill') as HTMLElement;
+    this.target = root.querySelector('.gauge .target') as HTMLElement;
     this.panel = root.querySelector('.panel') as HTMLElement;
     this.dyn = root.querySelector('.dyn') as HTMLElement;
     this.card = root.querySelector('.card') as HTMLElement;
@@ -69,15 +90,19 @@ export class Hud {
     this.slider = root.querySelector('.cal') as HTMLInputElement;
     this.panel.hidden = !this.open;
 
-    (root.querySelector('.gear') as HTMLButtonElement).onclick = () => {
-      this.open = !this.open;
-      this.panel.hidden = !this.open;
-    };
+    const toggle = (open: boolean) => { this.open = open; this.panel.hidden = !open; };
+    (root.querySelector('.gear') as HTMLButtonElement).onclick = () => toggle(!this.open);
+    (root.querySelector('.close') as HTMLButtonElement).onclick = () => toggle(false);
     const mode = root.querySelector('.mode') as HTMLSelectElement;
     mode.value = d.vehicle.mode;
     mode.onchange = () => d.onMode(mode.value as SteerMode);
+    const thr = root.querySelector('.throttle') as HTMLSelectElement;
+    thr.value = d.vehicle.throttleMode;
+    thr.onchange = () => d.onThrottleMode(thr.value as ThrottleMode);
     (root.querySelector('.recentre') as HTMLButtonElement).onclick = () => d.onRecentre();
     (root.querySelector('.respawn') as HTMLButtonElement).onclick = () => d.onRespawn();
+    const stop = root.querySelector('.stop') as HTMLButtonElement;
+    stop.addEventListener('pointerdown', (e) => { e.stopPropagation(); d.onStop(); });
     (root.querySelector('.drift') as HTMLButtonElement).onclick = () => d.probe.resetDrift();
     this.slider.value = String(d.window.calibration);
     this.slider.oninput = () => { d.window.setCalibration(parseFloat(this.slider.value)); this.updateCalibration(); };
@@ -112,13 +137,33 @@ export class Hud {
     }
     const v = this.d.vehicle;
     const o = this.d.orientation();
+    this.updateGauge(v);
     const flash = now < Number(this.status.dataset.flashUntil ?? 0) ? `\n${this.status.dataset.flash}` : '';
     const brake = v.braking ? ' BRAKE' : '';
+    const disp = v.throttleMode === 'displacement' ? `  ${(this.d.throttle.x * 100).toFixed(0)} cm` : '';
     this.status.textContent =
-      `${v.speed.toFixed(1)} m/s${brake}  hdg ${((v.heading * 180) / Math.PI).toFixed(0)}°  ` +
+      `${v.speed.toFixed(1)} m/s${disp}${brake}  hdg ${((v.heading * 180) / Math.PI).toFixed(0)}°  ` +
       `${v.mode}  ${o.kind} ${o.rate.hz} Hz  ${this.fps.toFixed(0)} fps${flash}`;
 
     if (this.open && this.frames % 6 === 0) this.updatePanel();
+  }
+
+  /** Speed bar: zero in the middle-left, forward fills right, reverse fills left. */
+  private updateGauge(v: Vehicle): void {
+    const t = v.tuning;
+    const span = t.maxSpeed + t.maxReverse;
+    const zeroPct = (100 * t.maxReverse) / span;
+    const pct = (s: number) => (100 * (s + t.maxReverse)) / span;
+    this.speedNum.textContent = Math.abs(v.speed).toFixed(1);
+    this.speedNum.classList.toggle('reverse', v.speed < -0.05);
+    const a = Math.min(zeroPct, pct(v.speed));
+    const b = Math.max(zeroPct, pct(v.speed));
+    this.fill.style.left = `${a}%`;
+    this.fill.style.width = `${b - a}%`;
+    this.fill.classList.toggle('braking', v.braking);
+    const showTarget = v.throttleMode === 'displacement' && !v.braking;
+    this.target.hidden = !showTarget;
+    if (showTarget) this.target.style.left = `${pct(v.targetSpeed)}%`;
   }
 
   private updatePanel(): void {
@@ -142,7 +187,8 @@ export class Hud {
       ['deviceorientation events', `${p.deviceorientation.hz} Hz · α ${p.alpha?.toFixed(1) ?? '—'}`],
       ['deviceorientationabsolute events', `${p.deviceorientationabsolute.hz} Hz · α ${p.alphaAbsolute?.toFixed(1) ?? '—'}`],
       ['devicemotion events', `${p.devicemotion.hz} Hz`],
-      ['throttle (devicemotion a_z)', t.available ? `a_z ${t.az.toFixed(2)} m/s² · ${t.phase}` : 'no readings'],
+      ['throttle source', t.available ? `${t.kind} · ${t.rate.hz} Hz · a_z ${t.az.toFixed(2)} m/s² · ${t.phase}` : 'no readings yet'],
+      ['displacement', `${(t.x * 100).toFixed(1)} cm · v ${t.v.toFixed(2)} m/s · ${t.still ? 'still' : 'moving'} · target ${this.d.vehicle.targetSpeed.toFixed(1)} m/s`],
       ['screen.orientation', `${screen.orientation?.type ?? '?'} ${screen.orientation?.angle ?? '?'}°`],
       ['steer', `${((this.d.vehicle.steer * 180) / Math.PI).toFixed(0)}°`],
     ];
