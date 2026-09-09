@@ -23,7 +23,7 @@ const JUMP_DEG = 1.0;
 const deg = (v) => (v * 180) / Math.PI;
 const norm = (v) => Math.hypot(...v);
 const dir = (e) => { const n = norm(e); return e.map((x) => x / n); };
-const angle = (a, b) => deg(Math.acos(Math.min(1, Math.max(-1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))));
+const angle = (a0, b0) => { const a = dir(a0), b = dir(b0); return deg(Math.acos(Math.min(1, Math.max(-1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])))); };
 const qAngle = (a, b) => deg(2 * Math.acos(Math.min(1, Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]))));
 
 // Frame rate and fix rate.
@@ -40,16 +40,21 @@ console.log(`fix sources: ${JSON.stringify(bySrc)} · eye switches: ${fixes.filt
 const rawSteps = fixes.slice(1).map((f, i) => angle(f.fix.dwr, fixes[i].fix.dwr));
 console.log(`raw fix direction step: median ${pct(rawSteps, 0.5).toFixed(2)}°, p95 ${pct(rawSteps, 0.95).toFixed(2)}°, max ${Math.max(...rawSteps).toFixed(2)}°`);
 
-// Jumps in the rendered (screen-frame) eye direction.
+// Jumps: frames where the eye estimate moved in the WORLD (not explained by phone rotation) by more
+// than JUMP_DEG, or where the range to the eye changed by more than 5 % in one frame.
 const jumps = [];
+let rotOnly = 0;
 for (let i = 1; i < frames.length; i++) {
   const a = frames[i - 1], b = frames[i];
-  const screenStep = angle(dir(a.e), dir(b.e));
+  const screenStep = angle(a.e, b.e);
   const phoneRot = qAngle(a.q, b.q);
   const worldStep = angle(a.dw, b.dw);
-  if (screenStep > JUMP_DEG) jumps.push({ i, t: b.t, screenStep, phoneRot, worldStep, dt: b.dt });
+  const rangeStep = Math.abs(norm(b.e) / norm(a.e) - 1);
+  if (screenStep > JUMP_DEG && worldStep <= 0.3 && rangeStep < 0.05) rotOnly++;
+  if (worldStep > 0.3 || rangeStep >= 0.05) jumps.push({ i, t: b.t, screenStep, phoneRot, worldStep, rangeStep, dt: b.dt });
 }
-console.log(`\njumps > ${JUMP_DEG}° in rendered eye direction: ${jumps.length}`);
+console.log(`\nframes with > ${JUMP_DEG}° screen motion explained purely by phone rotation (correct behaviour): ${rotOnly}`);
+console.log(`unexplained jumps (world direction > 0.3° or range > 5 % in one frame): ${jumps.length}`);
 const lastFixBefore = (i) => { for (let j = i; j >= 0; j--) if (frames[j].fix) return frames[j]; return null; };
 for (const j of jumps.slice(0, 40)) {
   const f = frames[j.i];
@@ -63,7 +68,7 @@ for (const j of jumps.slice(0, 40)) {
   if (f.status) why.push(`status "${f.status}"`);
   if (j.phoneRot > 0.5) why.push(`phone rotated ${j.phoneRot.toFixed(2)}° this frame`);
   if (j.worldStep > 0.3) why.push(`world dir moved ${j.worldStep.toFixed(2)}°`);
-  console.log(`  t+${((j.t - frames[0].t) / 1000).toFixed(2)} s: ${j.screenStep.toFixed(2)}° in ${j.dt} ms${nearMark ? ' ★MARK' : ''} — ${why.join('; ') || 'no event'}`);
+  console.log(`  t+${((j.t - frames[0].t) / 1000).toFixed(2)} s: world ${j.worldStep.toFixed(2)}°, range ${(100 * j.rangeStep).toFixed(1)} %, screen ${j.screenStep.toFixed(2)}°${nearMark ? ' ★MARK' : ''} — ${why.join('; ') || 'no event'}`);
 }
 if (marks.length) {
   console.log('\nmarks and the largest screen-direction step within the preceding 1.5 s:');

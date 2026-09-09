@@ -290,6 +290,38 @@ landmarker workers, D-32; sheet end at the outer corner of the left eye):
   matters. Chin up/down changed the corrected spacing by −5 %/+1 %, iris by
   −10 %/0 %: the iris cue again suffers under downward gaze.
 
-Not yet measured: latency, one-eye tracking at close range (the detector
-needs most of the face in frame, so below about 15 cm the estimate will
-hold its last value), render fps with both workers running.
+Trace session 1 (2026-09-09, `?trace`, 64 s of normal use, 3865 frames,
+analysis `node scripts/s8-trace-analyse.mjs`):
+
+- **Render 60 fps throughout** (frame time median and p95 16.7 ms, max
+  33 ms) with both workers running. Fixes at 30/s (gap median 34 ms), all
+  from the detector; the detector kept the face down to 17 cm.
+- **Raw fix jitter**: consecutive fixes 34 ms apart differ by 0.35° median
+  (p90 0.96°) in the screen frame while the phone is still, i.e. about
+  2 mm of apparent eye motion per fix at 33 cm. This is the detector's
+  keypoint noise; the spacing cue is far steadier because the noise is
+  common to both eyes.
+- **Camera latency**: rotation-correlated jitter of the world-frame fix
+  direction is minimised when the orientation is taken 90–120 ms before the
+  grab timestamp (0.57° vs 0.72° at 0 ms). Set to 100 ms.
+- **The filter's speed term was opened by the noise itself** (beta 8 on a
+  unit vector: 0.2 rad/s of jitter raised the cutoff to 1.9 Hz). Replaying
+  the recorded fixes through the one-euro filter offline: raw roughness
+  (second difference of direction) 0.55° median / 1.61° p95 per fix; at
+  min-cutoff 0.5 Hz, beta 2 it is 0.09° / 0.37° with 75 ms lag; beta 0
+  would reach 0.04° but with 325 ms lag. Chosen: 0.5 Hz, beta 2.
+- **Most fix-to-fix motion is real, not noise**: even the heaviest filter
+  leaves 0.34° per fix of direction change, i.e. about 10°/s. Turning a
+  phone by hand also translates it, and the gyro cannot see translation, so
+  the direction to the eye genuinely changes fast. A lateral inertial
+  estimate (accelerometer with zero-velocity updates, as for the throttle)
+  would let the world-frame trick cover translation too; not done yet.
+- **Eye switches were the big jumps**: five switches in 64 s, each an
+  8° step in view direction blended over 0.8 s, none intended. The
+  viewpoint eye is now chosen in the first 1.5 s and locked; the panel can
+  re-choose or pin it.
+- Face lost for 2 s during a fast yaw; the world-frame direction held and
+  the picture followed the gyro correctly, then blended on reacquisition.
+
+Not yet measured: one-eye tracking below about 15 cm (the detector needs
+most of the face).

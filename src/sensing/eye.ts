@@ -131,17 +131,20 @@ export class EyeTracker {
   private chosen: EyeSide = 'right';
   private switchSince = 0;
   private lastFaceT = 0;
+  private firstFaceT = 0;
   private reacquiredT = -Infinity;
   private bridgeBase = 0;
   private bridgeAtFix = 0;
   private displacement = () => 0;
   private sizeSamples: { iris: number; ipd: number; t: number }[] = [];
   /**
-   * Lateral eye position is filtered hard: at rest the cutoff is 0.5 Hz, so
-   * hand tremor and keypoint jitter (a few mm) vanish, while a deliberate
-   * head move of 10 cm/s raises the cutoff enough to follow without lag.
+   * The eye direction (unit vector, world frame) is filtered hard: at rest
+   * the cutoff is 0.5 Hz, so keypoint jitter (0.35° per fix on the Pixel 7a,
+   * trace session 1) vanishes. The speed term is small because jitter alone
+   * moves the direction at about 0.2 rad/s; a deliberate head move
+   * (0.6 rad/s) still raises the cutoff to about 1.7 Hz.
    */
-  private readonly fdir = [new OneEuroFilter(0.5, 8, 1), new OneEuroFilter(0.5, 8, 1), new OneEuroFilter(0.5, 8, 1)] as const;
+  private readonly fdir = [new OneEuroFilter(0.5, 2, 1), new OneEuroFilter(0.5, 2, 1), new OneEuroFilter(0.5, 2, 1)] as const;
   /**
    * Phone orientation (device → world) sampled every frame, so a camera fix
    * taken `t0` ago can be expressed in the world frame with the orientation
@@ -156,8 +159,14 @@ export class EyeTracker {
   /** Unfiltered world direction of the latest fix, for tracing. */
   readonly dirWorldRaw = new THREE.Vector3(0, 0, 1);
   private dirValid = false;
-  /** Camera latency assumed between frame capture and the grab timestamp, ms. */
-  private static readonly CAPTURE_LAG_MS = 35;
+  /**
+   * Camera latency between the frame's exposure and the grab timestamp, ms.
+   * Trace session 1: rotation-correlated fix jitter is minimised at 90–120 ms.
+   */
+  private static readonly CAPTURE_LAG_MS = 100;
+  /** In 'auto' mode the eye is chosen during the first seconds, then locked (switches were 8° jumps). */
+  private static readonly EYE_LOCK_MS = 1500;
+  private eyeLockedAt = 0;
   private probe: { delegate: Delegate; ms: number[] } | null = null;
   private captureW = 0;
   private captureH = 0;
@@ -226,8 +235,13 @@ export class EyeTracker {
     }
     this.tracking = true;
     this.status = 'tracking';
+    this.eyeLockedAt = 0;
+    this.firstFaceT = 0;
     this.schedule();
   }
+
+  /** Re-run the automatic eye choice (e.g. after the user re-seats the phone). */
+  rechooseEye(): void { this.eyeLockedAt = 0; this.firstFaceT = 0; }
 
   private init(w: Worker, role: Role, delegate: Delegate): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -334,6 +348,7 @@ export class EyeTracker {
     }
     const gap = now - this.lastFaceT;
     if (this.fix && gap > 400) this.reacquiredT = now;
+    if (!this.firstFaceT) this.firstFaceT = now;
     this.lastFaceT = now;
     this.status = this.probe ? `tracking · timing ${this.probe.delegate}` : 'tracking';
     this.lastSource = m.role;
@@ -388,14 +403,10 @@ export class EyeTracker {
     const dA = Math.hypot(A.u - axisU, A.v - axisV), dB = Math.hypot(B.u - axisU, B.v - axisV);
     const sideA: EyeSide = 'right', sideB: EyeSide = 'left';
     if (this.opts.eye !== 'auto') this.chosen = this.opts.eye;
-    else {
-      const other: EyeSide = this.chosen === 'left' ? 'right' : 'left';
-      // Switch only when the axis has passed the other eye's centre, and stayed there a second.
-      const otherNearer = other === sideA ? dA < dB - 0.6 * ipdPx : dB < dA - 0.6 * ipdPx;
-      if (otherNearer) {
-        if (!this.switchSince) this.switchSince = now;
-        if (now - this.switchSince > 1000) { this.chosen = other; this.switchSince = 0; this.reacquiredT = now; }
-      } else this.switchSince = 0;
+    else if (!this.eyeLockedAt) {
+      // Choose during the first moments of tracking, then lock (D-29 amended by trace session 1).
+      this.chosen = dA <= dB ? sideA : sideB;
+      if (this.lastFaceT && now - this.firstFaceT > EyeTracker.EYE_LOCK_MS) this.eyeLockedAt = now;
     }
     const E = this.chosen === sideA ? A : B;
     void sideB;
@@ -491,14 +502,12 @@ export class EyeTracker {
     const distL = Math.hypot(L.u - axisU, L.v - axisV), distR = Math.hypot(R.u - axisU, R.v - axisV);
     const other: EyeSide = this.chosen === 'left' ? 'right' : 'left';
     const visibleOnly: EyeSide | null = L.visible && !R.visible ? 'left' : R.visible && !L.visible ? 'right' : null;
+    void other;
     if (this.opts.eye !== 'auto') this.chosen = this.opts.eye;
-    else if (visibleOnly && visibleOnly !== this.chosen) { this.chosen = visibleOnly; this.switchSince = 0; }
-    else {
-      const otherNearer = other === 'left' ? distL < distR - 0.6 * ipdPx : distR < distL - 0.6 * ipdPx;
-      if (otherNearer && !visibleOnly) {
-        if (!this.switchSince) this.switchSince = now;
-        if (now - this.switchSince > 1000) { this.chosen = other; this.switchSince = 0; this.reacquiredT = now; }
-      } else this.switchSince = 0;
+    else if (visibleOnly && visibleOnly !== this.chosen) { this.chosen = visibleOnly; this.reacquiredT = now; }
+    else if (!this.eyeLockedAt) {
+      this.chosen = distL <= distR ? 'left' : 'right';
+      if (this.lastFaceT && now - this.firstFaceT > EyeTracker.EYE_LOCK_MS) this.eyeLockedAt = now;
     }
     const E = this.chosen === 'left' ? L : R;
 

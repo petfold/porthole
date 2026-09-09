@@ -121,7 +121,7 @@ export class Hud {
     eyes.onchange = () => d.onEyes(eyes.checked);
     const side = root.querySelector('.eyeside') as HTMLSelectElement;
     side.value = d.eyes.opts.eye;
-    side.onchange = () => { d.eyes.opts.eye = side.value as 'auto' | 'left' | 'right'; };
+    side.onchange = () => { d.eyes.opts.eye = side.value as 'auto' | 'left' | 'right'; d.eyes.rechooseEye(); };
     const rate = root.querySelector('.eyerate') as HTMLSelectElement;
     rate.value = String(d.eyes.opts.rate);
     rate.onchange = () => d.eyes.setRate(parseInt(rate.value, 10));
