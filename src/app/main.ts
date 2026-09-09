@@ -8,6 +8,7 @@ import { TouchControls } from '../sensing/touch';
 import { Vehicle, type SteerMode, type ThrottleMode } from './vehicle';
 import { Hud } from './hud';
 import { Minimap } from './minimap';
+import { EyeTracker } from '../sensing/eye';
 
 const params = new URLSearchParams(location.search);
 // Worlds live under ./worlds/<name>/world.json; later a Swarm reference goes here.
@@ -54,6 +55,10 @@ async function main(): Promise<void> {
   vehicle.mode = (params.get('mode') as SteerMode | null) ?? 'look';
   vehicle.throttleMode = (params.get('throttle') as ThrottleMode | null) ?? 'displacement';
 
+  const eyes = new EyeTracker();
+  eyes.setDisplacementSource(() => throttle.x);
+  const startEyes = () => eyes.start().then(() => hud.flash('eye tracking on')).catch((e: Error) => { eyes.status = `failed: ${e.message}`; hud.flash(`eye tracking failed: ${e.message}`); });
+
   const hud = new Hud(hudRoot, {
     vehicle,
     orientation: () => orientation,
@@ -66,6 +71,9 @@ async function main(): Promise<void> {
     onRecentre: () => recentre(),
     onRespawn: () => { respawn(); hud.flash('respawned'); },
     onStop: () => stop(),
+    eyes,
+    onEyes: (on) => { if (on) startEyes(); else { eyes.stop(); hud.flash('eye tracking off'); } },
+    onEyeCalibrate: (m) => hud.flash(eyes.calibrate(m) ? `calibrated at ${(m * 100).toFixed(0)} cm: f = ${eyes.focalPx.toFixed(0)} px` : 'no face in view'),
   });
 
   /** Stop dead and make the current phone position the new base. */
@@ -78,6 +86,7 @@ async function main(): Promise<void> {
   };
 
   const minimap = new Minimap(hudRoot, world);
+  if (params.has('eye')) startEyes();
 
   const recentre = () => {
     const did = vehicle.recentre(yawOf(orientation.quaternion));
@@ -101,6 +110,7 @@ async function main(): Promise<void> {
   const camera = view.window.camera;
   const yawQ = new THREE.Quaternion();
   const Y = new THREE.Vector3(0, 1, 0);
+  const eyeOffset = new THREE.Vector3();
   let last = performance.now();
 
   const frame = (now: number) => {
@@ -111,9 +121,14 @@ async function main(): Promise<void> {
     vehicle.update(dt, yawOf(q), rollOf(q));
     probe.trackDrift(q, now);
 
-    // Camera: rigid yaw of the world, then the phone's orientation; eye above the vehicle.
+    // Camera: rigid yaw of the world, then the phone's orientation. The window (screen centre)
+    // sits at eye height above the vehicle; the eye is behind it in the screen frame, so the
+    // camera moves to the eye and the frustum passes through the window's edges (D-27).
+    eyes.update(dt);
     camera.quaternion.copy(yawQ.setFromAxisAngle(Y, vehicle.viewOffset)).multiply(q);
-    camera.position.set(vehicle.position.x, vehicle.position.y + world.eyeHeight, vehicle.position.z);
+    eyeOffset.set(eyes.eye.x, eyes.eye.y, eyes.eye.z).applyQuaternion(camera.quaternion);
+    camera.position.set(vehicle.position.x, vehicle.position.y + world.eyeHeight, vehicle.position.z).add(eyeOffset);
+    view.window.applyEye(eyes.eye.x, eyes.eye.y, eyes.eye.z);
 
     view.render();
     hud.update();

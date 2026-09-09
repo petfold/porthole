@@ -49,4 +49,25 @@ export class WindowCamera {
     this.camera.fov = this.verticalFovDeg;
     this.camera.updateProjectionMatrix();
   }
+
+  /**
+   * Off-axis ("generalized") perspective: the screen is a window of the
+   * viewport's physical size centred on the origin of the screen frame,
+   * and the eye sits at (ex, ey, ez) in that frame (z toward the user).
+   * The frustum passes exactly through the window's edges, so the picture
+   * is correct for that eye position and nothing is warped (D-05, D-27).
+   * Call every frame; it replaces the symmetric projection from `resize`.
+   */
+  applyEye(ex: number, ey: number, ez: number): void {
+    const vp = this.viewportMm;
+    const w = vp.w / 1000, h = vp.h / 1000;
+    const n = this.camera.near, f = this.camera.far;
+    const s = n / Math.max(0.02, ez);
+    const left = (-w / 2 - ex) * s;
+    const right = (w / 2 - ex) * s;
+    const top = (h / 2 - ey) * s;
+    const bottom = (-h / 2 - ey) * s;
+    this.camera.projectionMatrix.makePerspective(left, right, top, bottom, n, f, this.camera.coordinateSystem);
+    this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
+  }
 }

@@ -9,6 +9,7 @@ import type { ThrottleGesture } from '../sensing/motion';
 import type { WindowCamera } from '../render/camera';
 import type { SteerMode, ThrottleMode, Vehicle } from './vehicle';
 import type { SensorProbe } from '../sensing/probe';
+import type { EyeTracker } from '../sensing/eye';
 
 export interface HudDeps {
   vehicle: Vehicle;
@@ -22,6 +23,9 @@ export interface HudDeps {
   onRecentre(): void;
   onRespawn(): void;
   onStop(): void;
+  eyes: EyeTracker;
+  onEyes(on: boolean): void;
+  onEyeCalibrate(distanceM: number): void;
 }
 
 const CARD_MM = 85.6; // ISO/IEC 7810 ID-1 long edge
@@ -37,6 +41,7 @@ export class Hud {
   private readonly card: HTMLElement;
   private readonly fovLabel: HTMLElement;
   private readonly slider: HTMLInputElement;
+  private eyeInfo!: HTMLElement;
   private fps = 0;
   private frames = 0;
   private lastFpsT = performance.now();
@@ -70,6 +75,12 @@ export class Hud {
           <option value="impulse">impulse: push to add speed, coast</option>
         </select>
         <div class="small">Hold the screen to brake; that also sets the base position.</div>
+        <h2>Eye (S8)</h2>
+        <label><input type="checkbox" class="eyes" /> Track the eye with the front camera</label>
+        <div>Rate <select class="eyerate"><option>5</option><option selected>10</option><option>15</option><option>30</option></select> /s</div>
+        <div class="small">Calibrate once: hold the phone at the given distance from your eye, then tap.</div>
+        <button class="cal30">I am at 30 cm</button><button class="cal40">I am at 40 cm</button>
+        <div class="eyeinfo"></div>
         <h2>Window (S7)</h2>
         <div>Match the bar to the long edge of a bank card (${CARD_MM} mm), then check the FOV.</div>
         <div class="card"></div>
@@ -104,6 +115,15 @@ export class Hud {
     const stop = root.querySelector('.stop') as HTMLButtonElement;
     stop.addEventListener('pointerdown', (e) => { e.stopPropagation(); d.onStop(); });
     (root.querySelector('.drift') as HTMLButtonElement).onclick = () => d.probe.resetDrift();
+    const eyes = root.querySelector('.eyes') as HTMLInputElement;
+    eyes.checked = d.eyes.tracking;
+    eyes.onchange = () => d.onEyes(eyes.checked);
+    const rate = root.querySelector('.eyerate') as HTMLSelectElement;
+    rate.value = String(d.eyes.opts.rate);
+    rate.onchange = () => d.eyes.setRate(parseInt(rate.value, 10));
+    (root.querySelector('.cal30') as HTMLButtonElement).onclick = () => d.onEyeCalibrate(0.3);
+    (root.querySelector('.cal40') as HTMLButtonElement).onclick = () => d.onEyeCalibrate(0.4);
+    this.eyeInfo = root.querySelector('.eyeinfo') as HTMLElement;
     this.slider.value = String(d.window.calibration);
     this.slider.oninput = () => { d.window.setCalibration(parseFloat(this.slider.value)); this.updateCalibration(); };
     // Stop panel touches from reaching the view (brake / recentre).
@@ -145,7 +165,7 @@ export class Hud {
       `${v.speed.toFixed(1)} m/s${disp}${brake}  hdg ${((v.heading * 180) / Math.PI).toFixed(0)}°  ` +
       `${v.mode}  ${o.kind} ${o.rate.hz} Hz  ${this.fps.toFixed(0)} fps${flash}`;
 
-    if (this.open && this.frames % 6 === 0) this.updatePanel();
+    if (this.open && this.frames % 6 === 0) { this.updatePanel(); this.updateEye(); }
   }
 
   /** Speed bar: zero in the middle-left, forward fills right, reverse fills left. */
@@ -164,6 +184,18 @@ export class Hud {
     const showTarget = v.throttleMode === 'displacement' && !v.braking;
     this.target.hidden = !showTarget;
     if (showTarget) this.target.style.left = `${pct(v.targetSpeed)}%`;
+  }
+
+  private updateEye(): void {
+    const e = this.d.eyes;
+    const cb = this.root.querySelector('.eyes') as HTMLInputElement | null;
+    if (cb && cb.checked !== e.tracking && !e.status.startsWith('starting') && !e.status.startsWith('loading')) cb.checked = e.tracking;
+    const f = e.fix;
+    const vf = this.d.window.verticalFovDeg;
+    const live = `eye ${(e.eye.z * 100).toFixed(1)} cm · x ${(e.eye.x * 100).toFixed(1)} y ${(e.eye.y * 100).toFixed(1)} cm · ` +
+      `window ${(2 * Math.atan((this.d.window.viewportMm.h / 1000 / 2) / e.eye.z) * 180 / Math.PI).toFixed(0)}° (was ${vf.toFixed(0)}° at 40 cm)`;
+    this.eyeInfo.textContent = `${e.status} · ${e.delegate} · ${e.rate.hz}/s · ${e.inferenceMs.toFixed(0)} ms · f ${e.focalPx.toFixed(0)} px\n${live}` +
+      (f ? `\nfix: ${f.eye} eye · iris ${f.irisPx.toFixed(1)} px → ${(f.z * 100).toFixed(1)} cm · IPD → ${f.ipdDistance ? (f.ipdDistance * 100).toFixed(1) + ' cm' : '—'}` : '');
   }
 
   private updatePanel(): void {

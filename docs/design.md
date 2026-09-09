@@ -236,6 +236,7 @@ live. When the last peer leaves, the latest snapshot *is* the world's state.
 | Object pick-up / put-down | WebRTC data (Yjs doc) | on event | yes, via snapshot feeds |
 | Lease refresh | WebRTC data (Yjs doc) | every 5 s while holding | yes |
 | Voice | WebRTC audio | continuous | no |
+| Front-camera frames, eye position | never leave the phone | — | no |
 | Document snapshot | Swarm feed (per peer) | periodic (library default) | yes |
 
 ## 6. Identity

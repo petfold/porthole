@@ -29,6 +29,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 #hud .panel button, #hud .panel select { font: inherit; padding: 8px 12px; margin: 2px 4px 2px 0; }
 #hud .panel .close { width: 100%; background: #eee; color: #000; border: 0; border-radius: 6px; }
 #hud .panel input[type=range] { width: 100%; }
+#hud .eyeinfo { white-space: pre-wrap; font-size: 12px; margin-top: 4px; }
+#hud .panel label { display: block; padding: 6px 0; }
 #hud .card { height: 12px; background: #f1c40f; margin: 6px 0; }
 #hud .warn { color: #f6b26b; }
 #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;

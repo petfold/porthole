@@ -18,7 +18,7 @@ navigation. No networking yet. See `docs/plan.md`.
 ## Try it on a phone
 
 ```
-pnpm install
+pnpm install      # also copies the MediaPipe runtime and downloads its model into public/
 pnpm dev:phone
 ```
 
@@ -33,6 +33,10 @@ context). Tap to start.
 - **Brake:** touch and hold the screen.
 - **Recentre:** double-tap (only matters in the `yawrate` steering mode).
 - **Stop:** the octagonal STOP button. Zeroes speed and resets the throttle base.
+- **Eye tracking (experimental):** panel → Eye (S8) → toggle, or add `?eye`.
+  Grants the front camera; the window then widens as you bring the phone
+  closer and shifts as you move your head, true to the geometry. Calibrate
+  once by holding the phone at 30 or 40 cm and tapping the matching button.
 - **Map:** bottom left, north up, centred on you. The red dot is you; the
   sector shows where you are looking and how wide the window is.
 - **Settings:** the gear at top right, or add `?panel` to the URL. Shows
@@ -41,7 +45,7 @@ context). Tap to start.
 
 URL options: `?mode=look|yawrate|roll`, `?throttle=displacement|impulse`,
 `?orientation=generic-sensor|deviceorientation|drag`, `?world=./worlds/shapes/world.json`,
-`?panel` (open the settings panel at start), `?autostart` (skip the tap, for headless tests).
+`?panel` (open the settings panel at start), `?eye` (start eye tracking), `?autostart` (skip the tap, for headless tests).
 
 ## Try it on a desktop
 

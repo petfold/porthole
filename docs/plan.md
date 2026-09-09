@@ -31,9 +31,10 @@ Exit: Peter rides around the shapes on a GrapheneOS phone over `pnpm
 dev:phone`, records the S1/S6/S7 tables in `spikes.md`, and picks a steering
 mode (closes D-10, D-22, D-23).
 
-## Phase 1c — the window follows the eye
+## Phase 1c — the window follows the eye (in progress)
 
-- Spike S8 first.
+- Spike S8 runs in the app: panel → Eye (S8) → toggle, rate, calibration,
+  live readout (D-30).
 - Front camera stream at low resolution; MediaPipe Face Landmarker in a
   worker at a configurable 5–10 inferences/s.
 - Distance from iris diameter with an IPD cross-check; one-time focal

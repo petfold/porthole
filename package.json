@@ -16,10 +16,14 @@
     "preview": "vite preview --host",
     "check:types": "tsc --noEmit",
     "publish:swarm": "node scripts/publish-to-swarm.mjs",
-    "make:world": "node scripts/make-world.mjs"
+    "make:world": "node scripts/make-world.mjs",
+    "fetch:assets": "node scripts/fetch-assets.mjs",
+    "prepare": "node scripts/fetch-assets.mjs",
+    "test:headless": "node scripts/headless-run.mjs"
   },
   "dependencies": {
     "@ethersphere/bee-js": "^13.0.0",
+    "@mediapipe/tasks-vision": "1.0.1",
     "three": "^0.186.0"
   },
   "devDependencies": {
