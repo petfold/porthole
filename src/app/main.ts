@@ -7,6 +7,7 @@ import { SensorProbe } from '../sensing/probe';
 import { TouchControls } from '../sensing/touch';
 import { Vehicle, type SteerMode, type ThrottleMode } from './vehicle';
 import { Hud } from './hud';
+import { Minimap } from './minimap';
 
 const params = new URLSearchParams(location.search);
 // Worlds live under ./worlds/<name>/world.json; later a Swarm reference goes here.
@@ -32,7 +33,8 @@ async function main(): Promise<void> {
   // Draw the world behind the start screen so the first frame is instant.
   view.render();
 
-  await new Promise<void>((resolve) => { startBtn.onclick = () => resolve(); });
+  // `?autostart` skips the tap for headless screenshots and tests.
+  if (!params.has('autostart')) await new Promise<void>((resolve) => { startBtn.onclick = () => resolve(); });
   startEl.remove();
   document.documentElement.requestFullscreen?.().catch(() => { /* optional */ });
   keepScreenAwake();
@@ -75,6 +77,8 @@ async function main(): Promise<void> {
     navigator.vibrate?.(20);
   };
 
+  const minimap = new Minimap(hudRoot, world);
+
   const recentre = () => {
     const did = vehicle.recentre(yawOf(orientation.quaternion));
     hud.flash(did ? 'recentred' : `recentre has no effect in "${vehicle.mode}" mode`);
@@ -113,6 +117,9 @@ async function main(): Promise<void> {
 
     view.render();
     hud.update();
+    const vfov = THREE.MathUtils.degToRad(camera.fov);
+    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+    minimap.update(vehicle.position.x, vehicle.position.z, yawOf(camera.quaternion), hfov);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);

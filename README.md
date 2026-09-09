@@ -32,13 +32,16 @@ context). Tap to start.
   persists; the vehicle coasts.
 - **Brake:** touch and hold the screen.
 - **Recentre:** double-tap (only matters in the `yawrate` steering mode).
+- **Stop:** the octagonal STOP button. Zeroes speed and resets the throttle base.
+- **Map:** bottom left, north up, centred on you. The red dot is you; the
+  sector shows where you are looking and how wide the window is.
 - **Settings:** the gear at top right, or add `?panel` to the URL. Shows
   sensor availability and rates, throttle impulses, the FOV calibration bar
   (match it to a bank card), and the steering mode selector.
 
 URL options: `?mode=look|yawrate|roll`, `?throttle=displacement|impulse`,
 `?orientation=generic-sensor|deviceorientation|drag`, `?world=./worlds/shapes/world.json`,
-`?panel` (open the settings panel at start).
+`?panel` (open the settings panel at start), `?autostart` (skip the tap, for headless tests).
 
 ## Try it on a desktop
 

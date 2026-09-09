@@ -41,3 +41,5 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 .banner { position: fixed; left: 8px; right: 8px; top: calc(8px + env(safe-area-inset-top, 0px)); padding: 10px 12px;
   background: rgba(120,40,0,.9); color: #fff; border-radius: 8px; font-size: 13px; z-index: 10; }
 .banner button { font: inherit; padding: 8px 12px; margin: 8px 6px 0 0; border: 0; border-radius: 6px; }
+#hud .minimap { position: absolute; left: 12px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 140px; height: 140px;
+  border-radius: 50%; box-shadow: 0 2px 8px rgba(0,0,0,.5); opacity: .95; }
