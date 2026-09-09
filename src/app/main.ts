@@ -9,7 +9,6 @@ import { Vehicle, type SteerMode, type ThrottleMode } from './vehicle';
 import { Hud } from './hud';
 import { Minimap } from './minimap';
 import { EyeTracker } from '../sensing/eye';
-import { InertialPose } from '../sensing/inertial';
 import { calibrationMode } from './calibrate';
 import { Tracer } from './trace';
 
@@ -59,6 +58,8 @@ async function main(): Promise<void> {
   vehicle.mode = (params.get('mode') as SteerMode | null) ?? 'look';
   vehicle.throttleMode = (params.get('throttle') as ThrottleMode | null) ?? 'displacement';
 
+  // Orientation prediction horizon (D-35), ms; declared early because the HUD reads it.
+  let predictMs = Number(params.get('predict') ?? 25);
   const eyes = new EyeTracker({
     model: (params.get('model') as 'auto' | 'detector' | 'landmarker' | null) ?? 'auto',
     eye: (params.get('eyeside') as 'auto' | 'left' | 'right' | null) ?? 'auto',
@@ -66,11 +67,11 @@ async function main(): Promise<void> {
   eyes.setDisplacementSource(() => throttle.x);
   eyes.setOrientationSource(() => orientation.quaternion);
   // Phone translation from the accelerometer (D-34), so the eye can be held as a world position.
-  const inertial = new InertialPose(() => orientation.quaternion);
-  let lastAcc: [number, number, number, number] = [0, 0, 0, 0];
-  throttle.onVector((ax, ay, az, dps, dt, now) => { inertial.feed(ax, ay, az, dps, dt, now); lastAcc = [ax, ay, az, dps]; });
   // Off by default until tuned from traces (trace session 2 showed 5 cm/s velocity bias); `?inertial` or the panel enables it.
-  if (params.has('inertial')) eyes.setInertialSource(inertial);
+  let lastAcc: [number, number, number, number] = [0, 0, 0, 0];
+  throttle.onVector((ax, ay, az, dps, dt, now) => { eyes.feedAcceleration(ax, ay, az, dps, dt, now); lastAcc = [ax, ay, az, dps]; });
+  if (params.has('inertial')) eyes.setInertial(true);
+  const inertial = eyes.inertialPose;
   const startEyes = () => eyes.start().then(() => hud.flash('eye tracking on')).catch((e: Error) => { eyes.status = `failed: ${e.message}`; hud.flash(`eye tracking failed: ${e.message}`); });
 
   const hud = new Hud(hudRoot, {
@@ -87,7 +88,9 @@ async function main(): Promise<void> {
     onStop: () => stop(),
     eyes,
     onEyes: (on) => { if (on) startEyes(); else { eyes.stop(); hud.flash('eye tracking off'); } },
-    onInertial: (on) => { eyes.setInertialSource(on ? inertial : null); hud.flash(`translation compensation ${on ? 'on' : 'off'}`); },
+    onInertial: (on) => { eyes.setInertial(on); hud.flash(`translation compensation ${on ? 'on' : 'off'}`); },
+    predictMs: () => predictMs,
+    onPredict: (ms) => { predictMs = ms; hud.flash(`orientation prediction ${ms} ms`); },
     onEyeCalibrate: (m) => { const n = eyes.calibrate(m); hud.flash(n ? `calibrated at ${(m * 100).toFixed(1)} cm from ${n} samples: f = ${eyes.focalPx.toFixed(0)} px` : 'hold still with your face in view, then try again'); },
   });
 
@@ -143,12 +146,31 @@ async function main(): Promise<void> {
   const yawQ = new THREE.Quaternion();
   const Y = new THREE.Vector3(0, 1, 0);
   const eyeOffset = new THREE.Vector3();
+  // Orientation prediction over the display latency (D-35): the picture is shown 20–40 ms after the
+  // sensor sample, and hand tremor at 10 Hz moves 0.5–1° in that time. Extrapolate with the angular rate.
+  const qPrev = new THREE.Quaternion();
+  const qDelta = new THREE.Quaternion();
+  const qPred = new THREE.Quaternion();
+  let havePrev = false;
+  const predictOrientation = (q: THREE.Quaternion, dt: number): THREE.Quaternion => {
+    if (!havePrev || dt <= 0 || predictMs <= 0) { qPrev.copy(q); havePrev = true; return qPred.copy(q); }
+    // delta = q * prev^-1 (rotation over the last frame, world frame); scale its angle by predictMs / dt.
+    qDelta.copy(qPrev).invert().premultiply(q);
+    const w = THREE.MathUtils.clamp(qDelta.w, -1, 1);
+    const angle = 2 * Math.acos(Math.abs(w));
+    qPrev.copy(q);
+    if (angle < 1e-5) return qPred.copy(q);
+    const s = Math.sqrt(1 - w * w) || 1e-9;
+    const axis = new THREE.Vector3(qDelta.x / s, qDelta.y / s, qDelta.z / s).multiplyScalar(Math.sign(qDelta.w) || 1);
+    const predAngle = Math.min(angle * (predictMs / 1000) / dt, 0.2); // cap at ~11° of extrapolation
+    return qPred.copy(q).premultiply(qDelta.setFromAxisAngle(axis, predAngle));
+  };
   let last = performance.now();
 
   const frame = (now: number) => {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    const q = orientation.quaternion;
+    const q = predictOrientation(orientation.quaternion, dt);
     vehicle.setDisplacement(throttle.x);
     vehicle.update(dt, yawOf(q), rollOf(q));
     probe.trackDrift(q, now);

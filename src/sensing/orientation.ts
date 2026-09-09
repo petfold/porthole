@@ -9,7 +9,7 @@
  * screen-referenced) → `deviceorientation` events → touch/mouse drag.
  */
 import * as THREE from 'three';
-import { RateMeter } from './rate';
+import { RateMeter } from './rate.ts';
 
 export type OrientationKind = 'generic-sensor' | 'deviceorientation' | 'drag' | 'none';
 

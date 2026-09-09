@@ -51,7 +51,7 @@ allow both, plus Camera for eye tracking.
 
 URL options: `?mode=look|yawrate|roll`, `?throttle=displacement|impulse`,
 `?orientation=generic-sensor|deviceorientation|drag`, `?world=./worlds/shapes/world.json`,
-`?panel` (open the settings panel at start), `?eye` (start eye tracking), `?model=auto|detector|landmarker`
+`?panel` (open the settings panel at start), `?eye` (start eye tracking), `?predict=25` (orientation prediction, ms), `?model=auto|detector|landmarker`
 (face models used for the eye), `?calibrate` (S8 calibration screen), `?autostart` (skip the tap, for headless tests).
 
 ## Try it on a desktop

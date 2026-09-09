@@ -9,7 +9,7 @@
  * arming again, so the return motion is not read as a second gesture.
  */
 import * as THREE from 'three';
-import { RateMeter } from './rate';
+import { RateMeter } from './rate.ts';
 
 export type MotionKind = 'linear-acceleration-sensor' | 'devicemotion' | 'devicemotion+gravity' | 'none';
 

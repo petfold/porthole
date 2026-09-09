@@ -4,7 +4,7 @@
  * of the chosen source while the phone rests. Read by the debug panel only.
  */
 import type * as THREE from 'three';
-import { RateMeter } from './rate';
+import { RateMeter } from './rate.ts';
 import { yawOf } from './orientation';
 
 export class SensorProbe {

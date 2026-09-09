@@ -19,9 +19,8 @@
  * Screen frame (also the device frame): x right, y up, z toward the user.
  */
 import * as THREE from 'three';
-import { RateMeter } from './rate';
-import { OneEuroFilter } from './filter';
-import type { InertialPose } from './inertial';
+import { RateMeter } from './rate.ts';
+import { EyeFusion, type FusionParams } from './eyefusion.ts';
 import type { DetectResult, FaceResult, InMsg, OutMsg, Role } from './eye.worker';
 
 export const IRIS_MM = 11.7;
@@ -85,7 +84,7 @@ function clampAbs(v: number, m: number): number { return Math.max(-m, Math.min(m
 export class EyeTracker {
   readonly rate = new RateMeter();
   fix: EyeFix | null = null;
-  readonly eye = { x: 0, y: 0, z: DEFAULT_EYE_DISTANCE_M };
+  get eye(): { x: number; y: number; z: number } { return this.fusion.eye; }
   tracking = false;
   private _status = 'off';
   get status(): string { return this._status; }
@@ -134,51 +133,17 @@ export class EyeTracker {
   private lastFaceT = 0;
   private firstFaceT = 0;
   private reacquiredT = -Infinity;
-  private bridgeBase = 0;
-  private bridgeAtFix = 0;
   private displacement = () => 0;
+  private dispAtPrevFix = 0;
   private sizeSamples: { iris: number; ipd: number; t: number }[] = [];
-  /**
-   * The eye direction (unit vector, world frame) is filtered hard: at rest
-   * the cutoff is 0.5 Hz, so keypoint jitter (0.35° per fix on the Pixel 7a,
-   * trace session 1) vanishes. The speed term is small because jitter alone
-   * moves the direction at about 0.2 rad/s; a deliberate head move
-   * (0.6 rad/s) still raises the cutoff to about 1.7 Hz.
-   */
-  private readonly fdir = [new OneEuroFilter(0.5, 2, 1), new OneEuroFilter(0.5, 2, 1), new OneEuroFilter(0.5, 2, 1)] as const;
-  /**
-   * Phone orientation (device → world) sampled every frame, so a camera fix
-   * taken `t0` ago can be expressed in the world frame with the orientation
-   * the phone had then. The eye barely moves in the world; the phone does.
-   */
+  /** All sensor fusion lives in EyeFusion so replay and simulation scripts run the same code. */
+  readonly fusion: EyeFusion;
   private orientation: (() => THREE.Quaternion) | null = null;
-  private readonly qHistory: { t: number; q: THREE.Quaternion }[] = [];
-  private readonly qTmp = new THREE.Quaternion();
-  private readonly vTmp = new THREE.Vector3();
-  /** Filtered eye direction in the world frame (unit vector from the screen centre towards the eye). */
-  readonly dirWorld = new THREE.Vector3(0, 0, 1);
-  /** Unfiltered world direction of the latest fix, for tracing. */
-  readonly dirWorldRaw = new THREE.Vector3(0, 0, 1);
-  /**
-   * With an inertial pose (D-34) the eye is kept as a world-frame POSITION
-   * relative to the inertial origin, so phone translation as well as rotation
-   * acts instantly. Filtered per component; beta is in metres per second.
-   */
-  private inertial: InertialPose | null = null;
-  readonly eyeWorld = new THREE.Vector3();
-  readonly eyeWorldRaw = new THREE.Vector3();
-  private eyeWorldValid = false;
-  private readonly fpos = [new OneEuroFilter(0.5, 3, 1), new OneEuroFilter(0.5, 3, 1), new OneEuroFilter(0.5, 3, 1)] as const;
-  /** Lightly smoothed current phone position, so sample-level integrator noise does not reach the screen. */
-  private readonly pNow = new THREE.Vector3();
-  private pNowValid = false;
-  private readonly pTmp = new THREE.Vector3();
-  private dirValid = false;
-  /**
-   * Camera latency between the frame's exposure and the grab timestamp, ms.
-   * Trace session 1: rotation-correlated fix jitter is minimised at 90–120 ms.
-   */
-  private static readonly CAPTURE_LAG_MS = 100;
+  get dirWorld(): THREE.Vector3 { return this.fusion.dirWorld; }
+  get dirWorldRaw(): THREE.Vector3 { return this.fusion.dirWorldRaw; }
+  get eyeWorld(): THREE.Vector3 { return this.fusion.eyeWorld; }
+  get eyeWorldRaw(): THREE.Vector3 { return this.fusion.eyeWorldRaw; }
+  get inertialPose() { return this.fusion.inertial; }
   /** In 'auto' mode the eye is chosen during the first seconds, then locked (switches were 8° jumps). */
   private static readonly EYE_LOCK_MS = 1500;
   private eyeLockedAt = 0;
@@ -186,7 +151,9 @@ export class EyeTracker {
   private captureW = 0;
   private captureH = 0;
 
-  constructor(opts?: Partial<EyeTrackerOptions>) {
+  constructor(opts?: Partial<EyeTrackerOptions>, fusionParams?: Partial<FusionParams>) {
+    this.fusion = new EyeFusion();
+    Object.assign(this.fusion.p, fusionParams ?? {});
     this.opts = { rate: 30, cameraOffset: { x: 0, y: 0.072 }, focalNorm: null, delegate: 'auto', model: 'auto', landmarkerDuty: 0.25, eye: 'auto', ...opts };
     let stored: number | null = null;
     try { const v = localStorage.getItem(KEY_F); if (v) stored = parseFloat(v) || null; } catch { /* no storage */ }
@@ -196,20 +163,15 @@ export class EyeTracker {
   get focalPx(): number { return this.focalNorm * Math.max(this.captureW, this.captureH, 1); }
   get captureSize(): { w: number; h: number } { return { w: this.captureW, h: this.captureH }; }
 
-  setDisplacementSource(fn: () => number): void { this.displacement = fn; }
+  setDisplacementSource(fn: () => number): void { this.displacement = fn; this.fusion.displacement = fn; }
   /** Provide the phone's device→world quaternion; without it the screen frame is treated as fixed. */
   setOrientationSource(fn: () => THREE.Quaternion): void { this.orientation = fn; }
-  /** Provide the phone's inertial position; with it, phone translation is compensated too (D-34). */
-  setInertialSource(pose: InertialPose | null): void { this.inertial = pose; this.eyeWorldValid = false; this.pNowValid = false; }
-  get usesInertial(): boolean { return this.inertial !== null; }
-
-  /** Orientation the phone had at time `t` (nearest sample), or identity. */
-  private orientationAt(t: number, out: THREE.Quaternion): THREE.Quaternion {
-    const h = this.qHistory;
-    if (!h.length) return out.identity();
-    let best = h[h.length - 1]!;
-    for (let i = h.length - 1; i >= 0; i--) { const e = h[i]!; if (Math.abs(e.t - t) < Math.abs(best.t - t)) best = e; if (e.t < t) break; }
-    return out.copy(best.q);
+  /** Enable or disable translation compensation from the accelerometer (D-34). */
+  setInertial(on: boolean): void { this.fusion.p.inertial = on; if (!on) this.fusion.clear(); }
+  get usesInertial(): boolean { return this.fusion.p.inertial; }
+  /** Gravity-free acceleration sample (device frame) for the inertial position. */
+  feedAcceleration(ax: number, ay: number, az: number, dps: number, dt: number, now: number): void {
+    this.fusion.feedAcceleration(ax, ay, az, dps, dt, now);
   }
   setRate(rate: number): void { this.opts.rate = rate; }
 
@@ -297,6 +259,7 @@ export class EyeTracker {
     this.stream = null;
     this.video = null;
     this.fix = null;
+    this.fusion.clear();
     this.busy = false;
     this.status = 'off';
   }
@@ -360,7 +323,7 @@ export class EyeTracker {
       if (this.fix) {
         const gap = now - this.lastFaceT;
         this.status = gap < LOST_HOLD_MS ? 'no face · holding last' : 'no face · returning to default';
-        if (gap > LOST_HOLD_MS + 5000) this.fix = null;
+        if (gap > LOST_HOLD_MS + 5000) { this.fix = null; this.fusion.clear(); }
       } else this.status = 'no face';
       return;
     }
@@ -446,40 +409,17 @@ export class EyeTracker {
     const dtFix = prev ? (fix.t - prev.t) / 1000 : 0;
     let vx = 0, vy = 0, vz = 0;
     if (prev && dtFix > 0.01 && dtFix < 0.3) {
-      const phoneMoved = this.displacement() - this.bridgeAtFix;
+      const phoneMoved = this.displacement() - this.dispAtPrevFix;
       vx = clampAbs((fix.x - prev.x) / dtFix, 1.5);
       vy = clampAbs((fix.y - prev.y) / dtFix, 1.5);
       vz = clampAbs((fix.z - phoneMoved - prev.z) / dtFix, 1.5);
     }
+    this.dispAtPrevFix = this.displacement();
     this.fix = { ...fix, vx, vy, vz };
-    // Direction to the eye in the world frame, using the orientation at capture time.
-    this.orientationAt(fix.t - EyeTracker.CAPTURE_LAG_MS, this.qTmp);
-    this.vTmp.set(fix.x, fix.y, fix.z).normalize().applyQuaternion(this.qTmp);
-    this.dirWorldRaw.copy(this.vTmp);
-    if (this.inertial) {
-      // Eye position in the world = phone position at capture + rotated screen-frame fix.
-      const tCap = fix.t - EyeTracker.CAPTURE_LAG_MS;
-      this.inertial.positionAt(tCap, this.pTmp);
-      this.eyeWorldRaw.set(fix.x, fix.y, fix.z).applyQuaternion(this.qTmp).add(this.pTmp);
-      const gentle = now - this.reacquiredT < 800;
-      for (const fl of this.fpos) fl.minCutoff = gentle ? 0.25 : 0.5;
-      if (!this.eyeWorldValid || now - this.reacquiredT < 1) {
-        this.eyeWorld.copy(this.eyeWorldRaw);
-        for (let i = 0; i < 3; i++) this.fpos[i]!.set(this.eyeWorldRaw.getComponent(i), now);
-        this.eyeWorldValid = true;
-      } else {
-        for (let i = 0; i < 3; i++) this.eyeWorld.setComponent(i, this.fpos[i]!.filter(this.eyeWorldRaw.getComponent(i), now));
-      }
-    }
-    if (!this.dirValid || now - this.reacquiredT < 1) { this.dirWorld.copy(this.vTmp); for (let i = 0; i < 3; i++) this.fdir[i]!.set(this.vTmp.getComponent(i), now); this.dirValid = true; }
-    else {
-      for (let i = 0; i < 3; i++) this.dirWorld.setComponent(i, this.fdir[i]!.filter(this.vTmp.getComponent(i), now));
-      this.dirWorld.normalize();
-    }
+    const reacquired = now - this.reacquiredT < 1;
+    this.fusion.addFix({ x: fix.x, y: fix.y, z: fix.z, t: fix.t, vz, reacquired }, now);
     this.sizeSamples.push({ iris: irisPx, ipd: ipdCorrPx, t: now });
     if (this.sizeSamples.length > 60) this.sizeSamples.shift();
-    this.bridgeAtFix = this.displacement();
-    this.bridgeBase = fix.z;
   }
 
   /** Auto delegate selection: time 8 frames on GPU, then 8 on CPU, keep the faster. */
@@ -580,67 +520,19 @@ export class EyeTracker {
     if (this.fix) {
       const scale = distanceM / this.fix.z;
       this.fix = { ...this.fix, x: this.fix.x * scale, y: this.fix.y * scale, z: distanceM, vx: 0, vy: 0, vz: 0 };
-      this.bridgeBase = distanceM;
-      this.bridgeAtFix = this.displacement();
+      this.fusion.addFix({ x: this.fix.x, y: this.fix.y, z: distanceM, t: this.fix.t, vz: 0, reacquired: true }, performance.now());
     }
     return r.n;
   }
 
-  update(dt: number): void {
+  /** Call every frame: advance the fusion and compute the screen-frame eye. */
+  update(_dt: number): void {
     const now = performance.now();
-    if (this.orientation) {
-      const h = this.qHistory;
-      const last = h[h.length - 1];
-      if (!last || now - last.t > 8) {
-        const entry = h.length >= 40 ? h.shift()! : { t: 0, q: new THREE.Quaternion() };
-        entry.t = now; entry.q.copy(this.orientation());
-        h.push(entry);
-      }
-    }
+    if (this.orientation) this.fusion.setOrientation(this.orientation(), now);
     const lostFor = now - this.lastFaceT;
-    if (!this.tracking || !this.fix || lostFor > LOST_HOLD_MS) {
-      this.dirValid = false;
-      this.eyeWorldValid = false;
-      const k = 1 - Math.exp(-dt / (this.tracking ? 4 : 0.5));
-      this.eye.x += (0 - this.eye.x) * k;
-      this.eye.y += (0 - this.eye.y) * k;
-      this.eye.z += (DEFAULT_EYE_DISTANCE_M - this.eye.z) * k;
-      return;
-    }
-    const f = this.fix;
-    if (this.inertial && this.eyeWorldValid) {
-      // Screen-frame eye = R(now)^-1 · (eyeWorld − phonePosition(now)). Phone rotation and translation
-      // since the fix are both compensated by the sensors; the camera only tracks head motion.
-      const q = this.orientation ? this.qTmp.copy(this.orientation()).invert() : this.qTmp.identity();
-      if (!this.pNowValid) { this.pNow.copy(this.inertial.position); this.pNowValid = true; }
-      else this.pNow.lerp(this.inertial.position, 1 - Math.exp(-dt / 0.04));
-      this.vTmp.copy(this.eyeWorld).sub(this.pNow).applyQuaternion(q);
-      if (this.vTmp.z < 0.05) this.vTmp.z = 0.05;
-      this.eye.x = this.vTmp.x;
-      this.eye.y = this.vTmp.y;
-      this.eye.z = this.vTmp.z;
-      return;
-    }
-    const ahead = Math.min(0.15, Math.max(0, (Math.min(now, this.lastFaceT) - f.t) / 1000));
-    const phoneMoved = this.displacement() - this.bridgeAtFix;
-    const gentle = now - this.reacquiredT < 800;
-    // Distance (range to the eye): dead-reckoned and lightly smoothed; zoom must feel immediate.
-    const rFix = Math.hypot(f.x, f.y, f.z);
-    const tr = Math.max(0.05, rFix + f.vz * ahead + phoneMoved);
-    const k = 1 - Math.exp(-dt / (gentle ? 0.35 : 0.05));
-    const rPrev = Math.hypot(this.eye.x, this.eye.y, this.eye.z);
-    const r = rPrev + (tr - rPrev) * k;
-    // Direction: the filtered world-frame direction, rotated into the screen frame with the
-    // phone's current orientation. Phone rotation therefore acts instantly; only head motion
-    // goes through the camera's latency and filter.
-    for (const fl of this.fdir) fl.minCutoff = gentle ? 0.25 : 0.5;
-    const q = this.orientation ? this.qTmp.copy(this.orientation()).invert() : this.qTmp.identity();
-    this.vTmp.copy(this.dirWorld).applyQuaternion(q);
-    if (this.vTmp.z < 0.2) this.vTmp.z = 0.2; // never behind the screen
-    this.vTmp.normalize().multiplyScalar(r);
-    this.eye.x = this.vTmp.x;
-    this.eye.y = this.vTmp.y;
-    this.eye.z = this.vTmp.z;
+    if (this.tracking && this.fix && lostFor > LOST_HOLD_MS) this.fusion.clear();
+    if (!this.tracking) this.fusion.clear();
+    this.fusion.update(now, this.lastFaceT);
   }
 
   static available(): boolean {

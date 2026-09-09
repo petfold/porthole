@@ -26,6 +26,8 @@ export interface HudDeps {
   eyes: EyeTracker;
   onEyes(on: boolean): void;
   onInertial(on: boolean): void;
+  predictMs(): number;
+  onPredict(ms: number): void;
   onEyeCalibrate(distanceM: number): void;
 }
 
@@ -84,6 +86,9 @@ export class Hud {
         <div class="small">Calibrate once: hold the phone at a known distance from your eye for a second, then tap. An A4 sheet's long edge is 29.7 cm, its short edge 21.0 cm.</div>
         <button class="cal" data-cm="29.7">A4 long, 29.7 cm</button><button class="cal" data-cm="21.0">A4 short, 21.0 cm</button><button class="cal" data-cm="40">40 cm</button>
         <div class="eyeinfo"></div>
+        <h2>Display latency</h2>
+        <div>Predict orientation ahead by <span class="predval"></span> ms</div>
+        <input type="range" class="predict" min="0" max="80" step="5" />
         <h2>Window (S7)</h2>
         <div>Match the bar to the long edge of a bank card (${CARD_MM} mm), then check the FOV.</div>
         <div class="card"></div>
@@ -132,6 +137,11 @@ export class Hud {
     rate.onchange = () => d.eyes.setRate(parseInt(rate.value, 10));
     for (const b of root.querySelectorAll<HTMLButtonElement>('.cal')) b.onclick = () => d.onEyeCalibrate(parseFloat(b.dataset.cm ?? '40') / 100);
     this.eyeInfo = root.querySelector('.eyeinfo') as HTMLElement;
+    const pred = root.querySelector('.predict') as HTMLInputElement;
+    const predVal = root.querySelector('.predval') as HTMLElement;
+    pred.value = String(d.predictMs());
+    predVal.textContent = pred.value;
+    pred.oninput = () => { predVal.textContent = pred.value; d.onPredict(parseInt(pred.value, 10)); };
     this.slider.value = String(d.window.calibration);
     this.slider.oninput = () => { d.window.setCalibration(parseFloat(this.slider.value)); this.updateCalibration(); };
     // Stop panel touches from reaching the view (brake / recentre).

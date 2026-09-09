@@ -340,5 +340,29 @@ smoothed (40 ms) before use. The trace now records raw acceleration and
 rotation rate per frame so the integrator can be tuned offline from the next
 recording rather than on the phone.
 
+Simulation and replay (2026-09-09; `scripts/s8-replay.ts` replays a trace
+through the fusion code, `scripts/s8-simulate.ts` runs it on synthetic
+sensors with known truth; both use the same `EyeFusion` module as the app):
+
+- **Filter**: true error is dominated by lag during deliberate head moves,
+  not by noise. Rotation-only, full noise: 0.5 Hz/β2 → 0.88° rms; 1 Hz/β4 →
+  0.79°; 2 Hz/β8 → 0.74° but roughness rises. Chosen 1 Hz/β4 (roughness
+  unchanged at 0.44°/frame in simulation, 0.31° in the replay of session 2
+  where no rotation-only setting changes it).
+- **Roughness floor is tremor**: with all tracker noise off and only hand
+  tremor (0.4° rms at 8–12 Hz) the per-frame roughness is still 0.30°, the
+  same as in the recordings. It is the gyro seeing the hand, i.e. real
+  geometry plus display latency, not the eye tracker. Hence D-35
+  (orientation prediction over display latency).
+- **Accelerometer translation compensation is rejected**: a deliberate 6 cm
+  hand translation at 0.2 Hz peaks at 0.09 m/s², below the measured bias of
+  about 0.15 m/s². Noise-free, the leaky integrator's 130 ms displacement
+  error is already 5.8 mm median (9.9 mm p95); with bias and noise the
+  simulated view error is 9–15° rms against 0.9° for rotation-only. Slow
+  hand motion is invisible to this sensor at this quality; the camera at
+  30 fixes/s handles it better alone. Code kept behind `?inertial`.
+- Camera latency 50 ms → 1.2° rms error, 100 or 150 ms → 0.88°: the 100 ms
+  estimate from session 1 is confirmed as adequate.
+
 Not yet measured: one-eye tracking below about 15 cm (the detector needs
-most of the face).
+most of the face); the effect of orientation prediction (D-35) on the phone.
