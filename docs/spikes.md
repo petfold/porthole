@@ -364,5 +364,21 @@ sensors with known truth; both use the same `EyeFusion` module as the app):
 - Camera latency 50 ms → 1.2° rms error, 100 or 150 ms → 0.88°: the 100 ms
   estimate from session 1 is confirmed as adequate.
 
+Orientation prediction horizon from the recordings (2026-09-09): hand
+motion in the two trace sessions had a median angular speed of 15–21°/s
+(p90 42–59°/s). Extrapolating the orientation by the last frame's rate and
+comparing with where the phone actually was one display latency later:
+
+| assumed latency | no prediction | 15 ms | 25 ms | 35 ms | 50 ms |
+|---|---|---|---|---|---|
+| 33 ms (two vsyncs) | 1.10° / 0.86° | 0.71 / 0.55 | **0.60 / 0.49** | 0.69 / 0.60 | 1.08 / 0.93 |
+| 50 ms | 1.63° / 1.25° | 1.23 / 0.93 | 1.04 / 0.80 | **0.96 / 0.77** | 1.09 / 0.92 |
+
+(rms error in degrees, session 1 / session 2). Over-prediction costs more
+than under-prediction, so 25 ms is the robust choice: it halves the
+latency-induced error at 33 ms and still removes a third at 50 ms. This
+error applies to the whole scene regardless of eye tracking, and at about
+1° rms it is of the same size as everything the eye filter was blamed for.
+
 Not yet measured: one-eye tracking below about 15 cm (the detector needs
-most of the face); the effect of orientation prediction (D-35) on the phone.
+most of the face); confirmation recording with prediction on.
