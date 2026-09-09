@@ -152,7 +152,9 @@ export class EyeTracker {
   private readonly qTmp = new THREE.Quaternion();
   private readonly vTmp = new THREE.Vector3();
   /** Filtered eye direction in the world frame (unit vector from the screen centre towards the eye). */
-  private readonly dirWorld = new THREE.Vector3(0, 0, 1);
+  readonly dirWorld = new THREE.Vector3(0, 0, 1);
+  /** Unfiltered world direction of the latest fix, for tracing. */
+  readonly dirWorldRaw = new THREE.Vector3(0, 0, 1);
   private dirValid = false;
   /** Camera latency assumed between frame capture and the grab timestamp, ms. */
   private static readonly CAPTURE_LAG_MS = 35;
@@ -424,6 +426,7 @@ export class EyeTracker {
     // Direction to the eye in the world frame, using the orientation at capture time.
     this.orientationAt(fix.t - EyeTracker.CAPTURE_LAG_MS, this.qTmp);
     this.vTmp.set(fix.x, fix.y, fix.z).normalize().applyQuaternion(this.qTmp);
+    this.dirWorldRaw.copy(this.vTmp);
     if (!this.dirValid || now - this.reacquiredT < 1) { this.dirWorld.copy(this.vTmp); for (let i = 0; i < 3; i++) this.fdir[i]!.set(this.vTmp.getComponent(i), now); this.dirValid = true; }
     else {
       for (let i = 0; i < 3; i++) this.dirWorld.setComponent(i, this.fdir[i]!.filter(this.vTmp.getComponent(i), now));
