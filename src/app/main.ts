@@ -9,6 +9,7 @@ import { Vehicle, type SteerMode, type ThrottleMode } from './vehicle';
 import { Hud } from './hud';
 import { Minimap } from './minimap';
 import { EyeTracker } from '../sensing/eye';
+import { InertialPose } from '../sensing/inertial';
 import { calibrationMode } from './calibrate';
 import { Tracer } from './trace';
 
@@ -64,6 +65,10 @@ async function main(): Promise<void> {
   });
   eyes.setDisplacementSource(() => throttle.x);
   eyes.setOrientationSource(() => orientation.quaternion);
+  // Phone translation from the accelerometer (D-34), so the eye can be held as a world position.
+  const inertial = new InertialPose(() => orientation.quaternion);
+  throttle.onVector((ax, ay, az, dps, dt, now) => inertial.feed(ax, ay, az, dps, dt, now));
+  if (!params.has('noinertial')) eyes.setInertialSource(inertial);
   const startEyes = () => eyes.start().then(() => hud.flash('eye tracking on')).catch((e: Error) => { eyes.status = `failed: ${e.message}`; hud.flash(`eye tracking failed: ${e.message}`); });
 
   const hud = new Hud(hudRoot, {
@@ -160,6 +165,10 @@ async function main(): Promise<void> {
         q: [q.x, q.y, q.z, q.w].map((v) => Math.round(v * 1e4) / 1e4),
         e: [eyes.eye.x, eyes.eye.y, eyes.eye.z].map((v) => Math.round(v * 1e4) / 1e4),
         dw: [eyes.dirWorld.x, eyes.dirWorld.y, eyes.dirWorld.z].map((v) => Math.round(v * 1e4) / 1e4),
+        ew: [eyes.eyeWorld.x, eyes.eyeWorld.y, eyes.eyeWorld.z].map((v) => Math.round(v * 1e4) / 1e4),
+        pw: [inertial.position.x, inertial.position.y, inertial.position.z].map((v) => Math.round(v * 1e4) / 1e4),
+        vw: Math.round(inertial.velocity.length() * 1e3) / 1e3,
+        still: inertial.still ? 1 : 0,
         disp: Math.round(throttle.x * 1e4) / 1e4,
       };
       if (f && f.t !== lastFixT) {
@@ -169,6 +178,7 @@ async function main(): Promise<void> {
           ipd: +f.ipdPx.toFixed(2), ipdc: +f.ipdCorrPx.toFixed(2), fs: +f.foreshorten.toFixed(4), iris: +f.irisPx.toFixed(2),
           ds: +eyes.detectorScale.toFixed(4), is: +eyes.irisScale.toFixed(4), detMs: +eyes.detectorMs.toFixed(1), lmMs: +eyes.landmarkerMs.toFixed(1),
           dwr: [eyes.dirWorldRaw.x, eyes.dirWorldRaw.y, eyes.dirWorldRaw.z].map((v) => Math.round(v * 1e4) / 1e4),
+          ewr: [eyes.eyeWorldRaw.x, eyes.eyeWorldRaw.y, eyes.eyeWorldRaw.z].map((v) => Math.round(v * 1e4) / 1e4),
         };
       }
       if (eyes.status !== lastStatus) { lastStatus = eyes.status; rec.status = eyes.status; }

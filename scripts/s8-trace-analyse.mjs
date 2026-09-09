@@ -40,21 +40,33 @@ console.log(`fix sources: ${JSON.stringify(bySrc)} · eye switches: ${fixes.filt
 const rawSteps = fixes.slice(1).map((f, i) => angle(f.fix.dwr, fixes[i].fix.dwr));
 console.log(`raw fix direction step: median ${pct(rawSteps, 0.5).toFixed(2)}°, p95 ${pct(rawSteps, 0.95).toFixed(2)}°, max ${Math.max(...rawSteps).toFixed(2)}°`);
 
-// Jumps: frames where the eye estimate moved in the WORLD (not explained by phone rotation) by more
-// than JUMP_DEG, or where the range to the eye changed by more than 5 % in one frame.
+// Jumps: frames where the eye estimate moved in the WORLD (not explained by phone rotation or, when
+// the trace has it, translation) by more than a threshold, or the range changed > 5 % in one frame.
+// With world positions (ew, D-34) the step is in mm; without, the world direction step in degrees.
+const hasPos = frames.some((f) => f.ew);
 const jumps = [];
 let rotOnly = 0;
+const JUMP_MM = 3;
 for (let i = 1; i < frames.length; i++) {
   const a = frames[i - 1], b = frames[i];
   const screenStep = angle(a.e, b.e);
   const phoneRot = qAngle(a.q, b.q);
-  const worldStep = angle(a.dw, b.dw);
+  const worldStep = hasPos ? 1000 * Math.hypot(b.ew[0] - a.ew[0], b.ew[1] - a.ew[1], b.ew[2] - a.ew[2]) : angle(a.dw, b.dw);
+  const thresh = hasPos ? JUMP_MM : 0.3;
   const rangeStep = Math.abs(norm(b.e) / norm(a.e) - 1);
-  if (screenStep > JUMP_DEG && worldStep <= 0.3 && rangeStep < 0.05) rotOnly++;
-  if (worldStep > 0.3 || rangeStep >= 0.05) jumps.push({ i, t: b.t, screenStep, phoneRot, worldStep, rangeStep, dt: b.dt });
+  if (screenStep > JUMP_DEG && worldStep <= thresh && rangeStep < 0.05) rotOnly++;
+  if (worldStep > thresh || rangeStep >= 0.05) jumps.push({ i, t: b.t, screenStep, phoneRot, worldStep, rangeStep, dt: b.dt });
 }
-console.log(`\nframes with > ${JUMP_DEG}° screen motion explained purely by phone rotation (correct behaviour): ${rotOnly}`);
-console.log(`unexplained jumps (world direction > 0.3° or range > 5 % in one frame): ${jumps.length}`);
+const unit = hasPos ? 'mm' : '°';
+console.log(`\nframes with > ${JUMP_DEG}° screen motion explained purely by phone motion (correct behaviour): ${rotOnly}`);
+console.log(`unexplained jumps (eye moved in the world > ${hasPos ? JUMP_MM + ' mm' : '0.3°'} or range > 5 % in one frame): ${jumps.length}`);
+if (hasPos) {
+  const moves = frames.slice(1).map((f, i) => 1000 * Math.hypot(f.pw[0] - frames[i].pw[0], f.pw[1] - frames[i].pw[1], f.pw[2] - frames[i].pw[2]));
+  const stillFrac = frames.filter((f) => f.still).length / frames.length;
+  console.log(`inertial phone motion per frame: median ${pct(moves, 0.5).toFixed(2)} mm, p95 ${pct(moves, 0.95).toFixed(2)} mm · judged still ${(100 * stillFrac).toFixed(0)} % of frames`);
+  const ewSteps = fixes.slice(1).map((f, i) => 1000 * Math.hypot(...[0, 1, 2].map((k) => f.fix.ewr[k] - fixes[i].fix.ewr[k])));
+  console.log(`raw fix eye-world step: median ${pct(ewSteps, 0.5).toFixed(1)} mm, p95 ${pct(ewSteps, 0.95).toFixed(1)} mm`);
+}
 const lastFixBefore = (i) => { for (let j = i; j >= 0; j--) if (frames[j].fix) return frames[j]; return null; };
 for (const j of jumps.slice(0, 40)) {
   const f = frames[j.i];
@@ -67,8 +79,8 @@ for (const j of jumps.slice(0, 40)) {
   if (fx && fxPrev) why.push(`fix gap ${(fx.fix.t - fxPrev.fix.t).toFixed(0)} ms, raw step ${angle(fx.fix.dwr, fxPrev.fix.dwr).toFixed(2)}°`);
   if (f.status) why.push(`status "${f.status}"`);
   if (j.phoneRot > 0.5) why.push(`phone rotated ${j.phoneRot.toFixed(2)}° this frame`);
-  if (j.worldStep > 0.3) why.push(`world dir moved ${j.worldStep.toFixed(2)}°`);
-  console.log(`  t+${((j.t - frames[0].t) / 1000).toFixed(2)} s: world ${j.worldStep.toFixed(2)}°, range ${(100 * j.rangeStep).toFixed(1)} %, screen ${j.screenStep.toFixed(2)}°${nearMark ? ' ★MARK' : ''} — ${why.join('; ') || 'no event'}`);
+  if (j.worldStep > (hasPos ? JUMP_MM : 0.3)) why.push(`eye moved in world ${j.worldStep.toFixed(2)}${unit}`);
+  console.log(`  t+${((j.t - frames[0].t) / 1000).toFixed(2)} s: world ${j.worldStep.toFixed(2)}${unit}, range ${(100 * j.rangeStep).toFixed(1)} %, screen ${j.screenStep.toFixed(2)}°${nearMark ? ' ★MARK' : ''} — ${why.join('; ') || 'no event'}`);
 }
 if (marks.length) {
   console.log('\nmarks and the largest screen-direction step within the preceding 1.5 s:');

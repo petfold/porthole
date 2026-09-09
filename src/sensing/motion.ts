@@ -94,6 +94,7 @@ export class ThrottleGesture {
   private quietSince = 0;
   private lastT = 0;
   private readonly listeners = new Set<(i: Impulse) => void>();
+  private readonly vectorListeners = new Set<(ax: number, ay: number, az: number, dps: number, dt: number, now: number) => void>();
 
   /**
    * Displacement estimate along the screen normal, metres, positive = away
@@ -144,6 +145,16 @@ export class ThrottleGesture {
     return () => this.listeners.delete(fn);
   }
 
+  /** Full gravity-free acceleration vector (device frame) per sample, for other consumers. */
+  onVector(fn: (ax: number, ay: number, az: number, dps: number, dt: number, now: number) => void): () => void {
+    this.vectorListeners.add(fn);
+    return () => this.vectorListeners.delete(fn);
+  }
+
+  private emitVector(ax: number, ay: number, az: number, dps: number, dt: number, now: number): void {
+    for (const fn of this.vectorListeners) fn(ax, ay, az, dps, dt, now);
+  }
+
   private onMotion = (e: DeviceMotionEvent): void => {
     // The Generic Sensor path has priority once it delivers readings.
     if (this.kind === 'linear-acceleration-sensor') return;
@@ -157,7 +168,9 @@ export class ThrottleGesture {
     if (a && a.z !== null) {
       this.kind = 'devicemotion';
       this.available = true;
-      this.sample(a.z, dps, dt, performance.now());
+      const now = performance.now();
+      this.sample(a.z, dps, dt, now);
+      this.emitVector(a.x ?? 0, a.y ?? 0, a.z, dps, dt, now);
       return;
     }
     // No gravity-free reading: remove gravity ourselves using the orientation.
@@ -168,7 +181,9 @@ export class ThrottleGesture {
       // At rest a flat phone reports +9.81 on z (reaction to gravity), i.e. world "up" in the device frame.
       this.invQ.copy(this.orientation).invert();
       this.gravity.set(0, 9.81, 0).applyQuaternion(this.invQ);
-      this.sample(g.z - this.gravity.z, dps, dt, performance.now());
+      const now = performance.now();
+      this.sample(g.z - this.gravity.z, dps, dt, now);
+      this.emitVector((g.x ?? 0) - this.gravity.x, (g.y ?? 0) - this.gravity.y, g.z - this.gravity.z, dps, dt, now);
     }
   };
 
@@ -186,6 +201,7 @@ export class ThrottleGesture {
         this.available = true;
         // No rotation rate on this path; the gyro gate is skipped.
         this.sample(s.z, 0, dt, now);
+        this.emitVector(s.x ?? 0, s.y ?? 0, s.z, 0, dt, now);
       };
       s.start();
       this.sensor = s;
