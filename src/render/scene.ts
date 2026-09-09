@@ -16,12 +16,15 @@ export class View {
 
     const sky = new THREE.Color(world.sky?.color ?? '#a9c9e6');
     this.scene.background = sky;
-    if (world.sky?.fog) this.scene.fog = new THREE.Fog(sky, world.sky.fog * 0.6, world.sky.fog);
+    if (world.sky?.fog) this.scene.fog = new THREE.Fog(sky, world.sky.fog * 0.35, world.sky.fog);
 
-    this.scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x4a5a40, 0.9));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-    sun.position.set(30, 50, 20);
+    // Soft sky light plus a warm low sun from the south-west.
+    this.scene.add(new THREE.HemisphereLight(0xdde9f5, 0x9a8f7c, 1.7));
+    const sun = new THREE.DirectionalLight(0xfff3e0, 1.6);
+    sun.position.set(-250, 600, 300);
     this.scene.add(sun);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
 
     this.worldGroup = buildWorld(world);
     this.scene.add(this.worldGroup);

@@ -36,8 +36,9 @@ context). Tap to start.
   sensor availability and rates, throttle impulses, the FOV calibration bar
   (match it to a bank card), and the steering mode selector.
 
-URL options: `?mode=look|yawrate|roll`, `?orientation=generic-sensor|deviceorientation|drag`,
-`?world=./worlds/shapes/world.json`, `?panel` (open the settings panel at start).
+URL options: `?mode=look|yawrate|roll`, `?throttle=displacement|impulse`,
+`?orientation=generic-sensor|deviceorientation|drag`, `?world=./worlds/shapes/world.json`,
+`?panel` (open the settings panel at start).
 
 ## Try it on a desktop
 
@@ -59,11 +60,22 @@ The script prints the collection reference and the `bzz` URLs to open.
 
 ## Worlds
 
-A world is a folder with a `world.json` (see `public/worlds/shapes/`). Phase
-1a worlds are lists of primitives: `box`, `pyramid`, `cylinder`, `sphere`
-with `position` (base centre), `size`, optional `yaw`, and `color`. Later
-phases add a glTF scene, movable objects, and rooms, and load the folder from
-a Swarm reference instead of the bundle.
+A world is a folder with a `world.json`. Two ship with the bundle:
+
+- `worlds/paris-eiffel/` (default) — about 1.1 km of Paris around the Eiffel
+  Tower: building footprints, roads, parks and the Seine from OpenStreetMap,
+  plus a procedural Eiffel Tower. Regenerate with `pnpm make:world
+  paris-eiffel` (queries the Overpass API once; the app itself never does).
+  Map data © OpenStreetMap contributors, ODbL.
+- `worlds/shapes/` — a few primitives for tests. Open with
+  `?world=./worlds/shapes/world.json`.
+
+A manifest may contain `primitives` (`box`, `pyramid`, `cylinder`, `sphere`
+with `position`, `size`, `yaw`, `color`), `buildings` (footprint polygon and
+height), `areas` (`water`, `park`), `roads` (width and path) and
+`landmarks`. Coordinates are metres, x east, z south, y up. Later phases add
+glTF scenes, movable objects and rooms, and load the folder from a Swarm
+reference instead of the bundle.
 
 ## Layout
 

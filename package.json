@@ -15,7 +15,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "check:types": "tsc --noEmit",
-    "publish:swarm": "node scripts/publish-to-swarm.mjs"
+    "publish:swarm": "node scripts/publish-to-swarm.mjs",
+    "make:world": "node scripts/make-world.mjs"
   },
   "dependencies": {
     "@ethersphere/bee-js": "^13.0.0",

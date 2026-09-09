@@ -52,10 +52,14 @@ Non-goals for the PoC (each has a "later" note in §10):
 
 A world is a Swarm collection containing:
 
-- `world.json` — name, coordinate frame (metres, Y up), spawn pose, eye
-  height, ground, sky, a list of **primitives** (box, pyramid, cylinder,
-  sphere with position, size, yaw, colour), rooms (D-20), a list of object
-  definitions (id, model reference, initial pose), rendering hints
+- `world.json` — name, attribution, geographic origin, coordinate frame
+  (metres, Y up; x east, z south), spawn pose, eye height, ground, sky,
+  palette, **primitives** (box, pyramid, cylinder, sphere), **buildings**
+  (footprint polygons extruded to a height), **areas** (water, park),
+  **roads** (ribbons along polylines), **landmarks** (procedural models such
+  as the Eiffel Tower), rooms (D-20), object definitions, rendering hints.
+  City worlds are generated from OpenStreetMap by `scripts/make-world.mjs`
+  (D-26); the app only ever reads the static file.
 - `scene.glb` — optional static glTF scene, hand-built for the PoC (D-12).
   Phase 1a uses primitives only and ships the world inside the app bundle
   under `worlds/<name>/` (D-21); a Swarm reference replaces that path later.

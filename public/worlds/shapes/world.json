@@ -3,8 +3,8 @@
   "frame": { "units": "metres", "up": "Y" },
   "spawn": { "position": [0, 0, 14], "heading": 0 },
   "eyeHeight": 1.6,
-  "ground": { "size": 200, "color": "#4a6b45", "grid": true },
-  "sky": { "color": "#a9c9e6", "fog": 140 },
+  "ground": { "size": 200, "color": "#a8b89a", "grid": true },
+  "sky": { "color": "#bfd6ea", "fog": 260 },
   "primitives": [
     { "id": "cube-red",     "type": "box",      "position": [0, 0, 0],    "size": [2, 2, 2],   "color": "#c0392b" },
     { "id": "cube-blue",    "type": "box",      "position": [-6, 0, -4],  "size": [3, 1.5, 3], "yaw": 30, "color": "#2980b9" },

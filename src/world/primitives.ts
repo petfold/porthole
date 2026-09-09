@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import type { PrimitiveDef, WorldManifest } from './manifest';
+import { buildAreas, buildBuildings, buildRoads } from './city';
+import { buildEiffel } from './eiffel';
 
 /** Build the static scene for a primitive-based world. */
 export function buildWorld(world: WorldManifest): THREE.Group {
@@ -24,13 +26,27 @@ export function buildWorld(world: WorldManifest): THREE.Group {
   // Edge markers so the boundary is visible.
   const edge = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(world.ground.size, 0.01, world.ground.size)),
-    new THREE.LineBasicMaterial({ color: 0xffffff }),
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 }),
   );
   edge.position.y = 0.02;
   group.add(edge);
   void half;
 
   for (const p of world.primitives) group.add(buildPrimitive(p));
+
+  const areas = buildAreas(world.areas, world.palette);
+  if (areas) group.add(areas);
+  const roads = buildRoads(world.roads, world.palette);
+  if (roads) group.add(roads);
+  const buildings = buildBuildings(world.buildings, world.palette);
+  if (buildings) group.add(buildings);
+  for (const l of world.landmarks) {
+    const mesh = l.type === 'eiffel' ? buildEiffel(world.palette.tower) : null;
+    if (!mesh) continue;
+    mesh.position.set(l.position[0], l.position[1], l.position[2]);
+    mesh.rotation.y = THREE.MathUtils.degToRad(l.yaw ?? 0);
+    group.add(mesh);
+  }
   return group;
 }
 

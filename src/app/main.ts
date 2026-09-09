@@ -10,7 +10,7 @@ import { Hud } from './hud';
 
 const params = new URLSearchParams(location.search);
 // Worlds live under ./worlds/<name>/world.json; later a Swarm reference goes here.
-const worldUrl = params.get('world') ?? './worlds/shapes/world.json';
+const worldUrl = params.get('world') ?? './worlds/paris-eiffel/world.json';
 const forceOrientation = params.get('orientation') as OrientationKind | null;
 
 async function main(): Promise<void> {
@@ -21,6 +21,10 @@ async function main(): Promise<void> {
 
   const world = await loadWorld(worldUrl);
   const view = new View(canvas, world);
+  if (world.attribution) {
+    const credit = document.getElementById('credit');
+    if (credit) credit.textContent = `${world.name} · ${world.attribution}`;
+  }
   const vehicle = new Vehicle(undefined, world.ground.size / 2);
   const throttle = new ThrottleGesture();
   const probe = new SensorProbe();
