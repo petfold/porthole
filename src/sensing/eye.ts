@@ -53,6 +53,8 @@ export interface EyeFix {
   zIris: number;
   /** Head translation from the model's pose matrix (its own units), for records. */
   headTz: number | null;
+  /** The full 4×4 column-major face-to-camera matrix, for records. */
+  headMat: number[] | null;
   t: number;
 }
 
@@ -305,7 +307,7 @@ export class EyeTracker {
     }
     this.fix = {
       x, y, z, vx, vy, vz, eye: this.chosen, cue: zIpd !== null ? 'ipd' : 'iris',
-      irisPx: E.d, irisLeftPx: L.d, irisRightPx: R.d, ipdPx, ipdCorrPx, foreshorten, bothVisible, zIpd, zIris, headTz, t: t0,
+      irisPx: E.d, irisLeftPx: L.d, irisRightPx: R.d, ipdPx, ipdCorrPx, foreshorten, bothVisible, zIpd, zIris, headTz, headMat: face.mat, t: t0,
     };
     this.sizeSamples.push({ iris: E.d, ipd: ipdCorrPx, t: now });
     if (this.sizeSamples.length > 60) this.sizeSamples.shift();

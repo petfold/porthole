@@ -14,9 +14,35 @@ const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const sd = (xs) => Math.sqrt(mean(xs.map((x) => (x - mean(xs)) ** 2)));
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 
+/** Head yaw and pitch (degrees) from the model's face-to-camera matrix: direction of the face's x and y axes. */
+function headAngles(mat) {
+  if (!mat || mat.length !== 16) return null;
+  const ax = mat[0], ay = mat[1], az = mat[2];      // face x axis (through the eyes) in camera coords
+  const bx = mat[4], by = mat[5], bz = mat[6];      // face y axis (up)
+  const yaw = Math.atan2(az, Math.hypot(ax, ay)) * 180 / Math.PI;    // eye axis tilted towards/away from camera
+  const pitch = Math.atan2(bz, Math.hypot(bx, by)) * 180 / Math.PI;  // up axis tilted towards/away from camera
+  return { yaw, pitch };
+}
+
 const sessions = [...new Set(rows.map((r) => r.session))];
 for (const session of sessions) {
-  const rs = rows.filter((r) => r.session === session);
+  const all = rows.filter((r) => r.session === session);
+  const rs = all.filter((r) => r.kind !== 's8-pose');
+  const poses = all.filter((r) => r.kind === 's8-pose');
+  if (poses.length) {
+    console.log(`\n== session ${session} · head-pose block at ${poses[0].trueDistanceCm} cm · ${poses.length} records`);
+    console.log(`${'pose'.padEnd(8)} ${'n'.padStart(2)} ${'iris px'.padStart(9)} ${'ipd px'.padStart(9)} ${'ipdCorr'.padStart(9)} ${'foresh'.padStart(7)} ${'yaw°'.padStart(6)} ${'pitch°'.padStart(7)}`);
+    const byPose = new Map();
+    for (const r of poses) byPose.set(r.pose, [...(byPose.get(r.pose) ?? []), r]);
+    for (const [pose, g] of byPose) {
+      const ang = g.map((r) => headAngles(r.headMat)).filter(Boolean);
+      console.log(`${pose.padEnd(8)} ${String(g.length).padStart(2)} ${(mean(g.map((r) => r.irisMedianPx)).toFixed(1) + '±' + sd(g.map((r) => r.irisMedianPx)).toFixed(1)).padStart(9)} ` +
+        `${(mean(g.map((r) => r.ipdPx)).toFixed(1) + '±' + sd(g.map((r) => r.ipdPx)).toFixed(1)).padStart(9)} ${(mean(g.map((r) => r.ipdCorrMedianPx)).toFixed(1) + '±' + sd(g.map((r) => r.ipdCorrMedianPx)).toFixed(1)).padStart(9)} ` +
+        `${mean(g.map((r) => r.foreshorten)).toFixed(3).padStart(7)} ${(ang.length ? mean(ang.map((a) => a.yaw)).toFixed(0) : '—').padStart(6)} ${(ang.length ? mean(ang.map((a) => a.pitch)).toFixed(0) : '—').padStart(7)}`);
+    }
+    console.log('  (a good cue stays constant down this table; the correction is right if ipdCorr does while ipd does not)');
+  }
+  if (!rs.length) continue;
   console.log(`\n== session ${session} · ${rs.length} records · ${rs[0].t.slice(0, 16)} · ${rs[0].capture.w}×${rs[0].capture.h} · ${rs[0].delegate} ${mean(rs.map((r) => r.inferenceMs)).toFixed(0)} ms` +
     (rs[0].delegateMs ? ` · timing GPU ${rs[0].delegateMs.GPU?.toFixed(0) ?? '?'} CPU ${rs[0].delegateMs.CPU?.toFixed(0) ?? '?'}` : ''));
   const by = new Map();

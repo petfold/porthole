@@ -13,6 +13,16 @@ const TARGETS = [
   { label: 'A4 diagonal (fold corner to corner)', cm: 36.4 },
 ];
 const PER_TARGET = 5;
+/** Head-pose block: all at the A4 long edge, 29.7 cm. */
+const POSES = [
+  { key: 'square', label: 'Head square, looking at the camera' },
+  { key: 'left', label: 'Head turned left (nose towards your left shoulder)' },
+  { key: 'right', label: 'Head turned right' },
+  { key: 'up', label: 'Chin up, looking down at the phone with your eyes' },
+  { key: 'down', label: 'Chin down, looking up at the phone with your eyes' },
+];
+const PER_POSE = 3;
+const POSE_CM = 29.7;
 
 export async function calibrationMode(): Promise<void> {
   document.getElementById('start')?.remove();
@@ -27,13 +37,17 @@ export async function calibrationMode(): Promise<void> {
     second, then tap the button for that edge. Do each five times.</p>
     <div class="live">starting camera…</div>
     <div class="buttons"></div>
+    <h2>Head turn, at the A4 long edge (29.7 cm)</h2>
+    <p class="how">Keep the sheet's long edge between screen and eye. Turn or tilt your head about a quarter turn,
+    roughly 20 to 30 degrees, and keep looking at the phone with your eyes. Hold still one second, then tap. Three each.</p>
+    <div class="poses"></div>
     <div class="log"></div>
     <p class="how small">Records go to <code>spikes/records/s8-calibration.jsonl</code> on the dev machine.</p>`;
   const live = root.querySelector('.live') as HTMLElement;
   const buttons = root.querySelector('.buttons') as HTMLElement;
   const log = root.querySelector('.log') as HTMLElement;
 
-  const counts = new Map<number, number>();
+  const counts = new Map<string, number>();
   const session = Math.random().toString(36).slice(2, 8);
   const eyes = new EyeTracker({ rate: 20 });
   try {
@@ -43,24 +57,21 @@ export async function calibrationMode(): Promise<void> {
     return;
   }
 
-  for (const t of TARGETS) {
-    const b = document.createElement('button');
-    b.className = 'big';
-    b.textContent = `${t.label} · ${t.cm} cm · 0/${PER_TARGET}`;
-    b.onclick = async () => {
+  const takeRecord = async (cm: number, label: string, pose: string | null): Promise<boolean> => {
       const f = eyes.fix;
       const r = eyes.recentSizes(1500);
       if (!f || r.n < 5 || performance.now() - f.t > 700) {
         log.textContent = 'No steady face in view. Hold still with the phone facing you and try again.';
         navigator.vibrate?.([30, 40, 30]);
-        return;
+        return false;
       }
       const record = {
-        kind: 's8-calibration',
+        kind: pose ? 's8-pose' : 's8-calibration',
         session,
         t: new Date().toISOString(),
-        trueDistanceCm: t.cm,
-        label: t.label,
+        trueDistanceCm: cm,
+        label,
+        pose,
         irisMedianPx: r.iris,
         ipdCorrMedianPx: r.ipd,
         irisSamples: r.n,
@@ -71,6 +82,7 @@ export async function calibrationMode(): Promise<void> {
         foreshorten: f.foreshorten,
         bothVisible: f.bothVisible,
         headTz: f.headTz,
+        headMat: f.headMat,
         chosenEye: f.eye,
         capture: eyes.captureSize,
         screenCss: { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio },
@@ -80,14 +92,10 @@ export async function calibrationMode(): Promise<void> {
         focalNormInUse: eyes.focalNorm,
         ua: navigator.userAgent,
         // Implied focal lengths, for a quick look: f = px × distance / size.
-        fFromIris: (r.iris * t.cm) / (IRIS_MM / 10),
-        fFromIpd: (f.ipdPx * t.cm) / (IPD_MM / 10),
-        fFromIpdCorr: (r.ipd * t.cm) / (IPD_MM / 10),
+        fFromIris: (r.iris * cm) / (IRIS_MM / 10),
+        fFromIpd: (f.ipdPx * cm) / (IPD_MM / 10),
+        fFromIpdCorr: (r.ipd * cm) / (IPD_MM / 10),
       };
-      const n = (counts.get(t.cm) ?? 0) + 1;
-      counts.set(t.cm, n);
-      b.textContent = `${t.label} · ${t.cm} cm · ${n}/${PER_TARGET}`;
-      if (n >= PER_TARGET) b.classList.add('done');
       try {
         const key = 'porthole.s8.records';
         const arr = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown[];
@@ -99,11 +107,27 @@ export async function calibrationMode(): Promise<void> {
         const res = await fetch(new URL('__record?name=s8-calibration', location.href), { method: 'POST', body: JSON.stringify(record) });
         sent = res.ok ? 'sent to dev machine' : `send failed (${res.status})`;
       } catch { sent = 'send failed (no dev server)'; }
-      log.textContent = `Recorded ${t.cm} cm: iris ${r.iris.toFixed(1)} px, pupil spacing ${r.ipd.toFixed(1)} px (head ${(Math.acos(Math.min(1, f.foreshorten)) * 180 / Math.PI).toFixed(0)}° off) · ${sent}`;
+      log.textContent = `Recorded ${label}: iris ${r.iris.toFixed(1)} px, pupil spacing ${r.ipd.toFixed(1)} px (head ${(Math.acos(Math.min(1, f.foreshorten)) * 180 / Math.PI).toFixed(0)}° off) · ${sent}`;
       navigator.vibrate?.(25);
+      return true;
+  };
+
+  const counter = (parent: HTMLElement, key: string, text: string, max: number, onTap: () => Promise<boolean>) => {
+    const b = document.createElement('button');
+    b.className = 'big';
+    b.textContent = `${text} · 0/${max}`;
+    b.onclick = async () => {
+      if (!(await onTap())) return;
+      const n = (counts.get(key) ?? 0) + 1;
+      counts.set(key, n);
+      b.textContent = `${text} · ${n}/${max}`;
+      if (n >= max) b.classList.add('done');
     };
-    buttons.appendChild(b);
-  }
+    parent.appendChild(b);
+  };
+  for (const t of TARGETS) counter(buttons, `d${t.cm}`, `${t.label} · ${t.cm} cm`, PER_TARGET, () => takeRecord(t.cm, t.label, null));
+  const poses = root.querySelector('.poses') as HTMLElement;
+  for (const p of POSES) counter(poses, `p${p.key}`, p.label, PER_POSE, () => takeRecord(POSE_CM, p.label, p.key));
 
   const tick = () => {
     const f = eyes.fix;

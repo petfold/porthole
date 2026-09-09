@@ -54,7 +54,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 #hud.calib .live { padding: 10px 12px; border-radius: 8px; background: #3a2a1e; margin-bottom: 14px; }
 #hud.calib .live.ok { background: #1f3a26; }
 #hud.calib .live .warn { color: #f6b26b; }
-#hud.calib .buttons { display: grid; gap: 14px; }
+#hud.calib .buttons, #hud.calib .poses { display: grid; gap: 14px; }
+#hud.calib h2 { font-size: 16px; font-weight: 500; margin: 22px 0 6px; }
 #hud.calib button.big { font: inherit; font-size: 20px; padding: 26px 16px; border: 0; border-radius: 14px; background: #eee; color: #000; }
 #hud.calib button.big.done { background: #9ee37d; }
 #hud.calib .log { margin: 14px 0; min-height: 3em; color: #dfe6ee; }
