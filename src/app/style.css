@@ -5,14 +5,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 #hud .status { position: absolute; left: 8px; top: calc(8px + env(safe-area-inset-top, 0px)); padding: 4px 8px;
   background: rgba(0,0,0,.45); border-radius: 6px; font-variant-numeric: tabular-nums; white-space: pre; font-size: 12px; opacity: .8; }
 #hud .stop { position: absolute; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); pointer-events: auto;
-  width: 59px; height: 59px; border: 0; padding: 0; color: #fff; font: inherit; font-size: 12px; font-weight: 700;
-  letter-spacing: .05em; touch-action: none;
-  /* Regular octagon with a white rim, like the road sign: outer red octagon, inner border via a second background layer. */
-  clip-path: polygon(29.3% 0, 70.7% 0, 100% 29.3%, 100% 70.7%, 70.7% 100%, 29.3% 100%, 0 70.7%, 0 29.3%);
-  background: #c8281e; }
-#hud .stop::before { content: ""; position: absolute; inset: 3px; z-index: -1; }
-#hud .stop { position: absolute; isolation: isolate; box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px #c8281e; }
-#hud .stop:active { background: #ff5040; }
+  width: 47px; height: 47px; border: 0; padding: 0; background: transparent; color: transparent; font-size: 0;
+  touch-action: none; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='29.3,0 70.7,0 100,29.3 100,70.7 70.7,100 29.3,100 0,70.7 0,29.3' fill='%23fff'/><polygon points='30.9,4 69.1,4 96,30.9 96,69.1 69.1,96 30.9,96 4,69.1 4,30.9' fill='%23c1121f'/><text x='50' y='61' text-anchor='middle' font-family='Helvetica,Arial,sans-serif' font-weight='700' font-size='30' fill='%23fff' letter-spacing='1'>STOP</text></svg>"); background-size: contain; background-repeat: no-repeat; }
+#hud .stop:active { filter: brightness(1.25); }
 #hud .gauge { position: absolute; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
   width: min(55vw, 420px); text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
 #hud .gauge .speed { font-size: 34px; font-weight: 300; font-variant-numeric: tabular-nums; line-height: 1.1; }
