@@ -23,9 +23,9 @@ export const IPD_MM = 63;
 export const DEFAULT_EYE_DISTANCE_M = 0.4;
 /**
  * Focal length as a fraction of the longest capture side. Pixel 7a front
- * camera, S8 session 1 (pupil-spacing cue, head-on): 486 px at 640 → 0.76.
+ * camera, S8 session 2 (pupil-spacing cue, head square): 492 px at 640 → 0.77.
  */
-export const DEFAULT_FOCAL_NORM = 0.76;
+export const DEFAULT_FOCAL_NORM = 0.77;
 const KEY_F = 'porthole.eyeFocalNorm';
 /** How long a lost face keeps its last position before drifting back to the default. */
 const LOST_HOLD_MS = 20_000;

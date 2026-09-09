@@ -211,5 +211,56 @@ distance with an A4 sheet; analysis `node scripts/s8-analyse.mjs`):
   square to the camera, worker inference; verify the spacing cue within
   10 % and record GPU vs CPU timing.
 
+Session 2 (2026-09-09, same phone, worker inference, head held square,
+three distances × 5 and a head-pose block at 29.7 cm × 3):
+
+| true cm | iris px | pupil spacing, corrected px | f from iris | f from spacing |
+|---|---|---|---|---|
+| 36.4 | 16.0 ± 0.6 | 84.8 ± 0.7 | 497 | 492 |
+| 29.7 | 20.8 ± 0.2 | 105.4 ± 1.3 | 526 | 499 |
+| 21.0 | 28.7 ± 1.1 | 142.8 ± 3.1 | 516 | 480 |
+
+- With the head square **both cues hold within about 5 %** over 21–36 cm:
+  a focal length fitted at 29.7 cm predicts 37.1 and 22.0 cm (spacing) or
+  38.4 and 21.5 cm (iris). Session 1's iris failure did not reproduce; it
+  was most likely gaze or head pose, see below. Default focal length set to
+  0.77 × longest capture side (492 px at 640); the two cues give the same
+  focal length, so Peter's iris-to-pupil-spacing ratio matches the
+  population constants.
+- **Head pose block** (all at 29.7 cm; a good cue stays constant):
+
+  | pose | iris px | spacing raw | spacing corrected | model yaw / pitch |
+  |---|---|---|---|---|
+  | square | 20.3 | 103.3 | 103.2 | −1° / −15° |
+  | left | 18.8 (−7 %) | 97.6 (−6 %) | 104.7 (+1 %) | −22° / −21° |
+  | right | 18.8 (−7 %) | 88.5 (−14 %) | 97.7 (−5 %) | +25° / −22° |
+  | chin up, eyes down | 16.7 (−18 %) | 94.2 (−9 %) | 95.3 (−8 %) | +4° / −41° |
+  | chin down, eyes up | 21.9 (+8 %) | 110.7 (+7 %) | 110.4 (+7 %) | +4° / −10° |
+
+  - The model reports −15° pitch for a square head: that is the real
+    viewing angle of a camera 7 cm above the eyes at 30 cm (13.6°), so the
+    pose output is geometric, not an artefact.
+  - Yaw: the head-turn correction fixes the spacing cue for a left turn
+    (+1 %) and under-corrects a right turn (−5 %); the raw iris drops 7 %
+    either way. Spacing corrected stays the better cue under yaw (D-31
+    confirmed).
+  - Pitch: with the chin up and the **eyes looking down** the iris reading
+    collapses by 18 % while spacing moves 9 %; chin down moves both by
+    +7 %. Both cues moving together means the eye really moved (the head
+    pivots about the neck, so the sheet's end at the cheek no longer
+    measures the eye). The extra iris drop is eyelid occlusion under
+    downward gaze, which the landmark model reports as a smaller iris.
+    Consequence: the iris cue is unreliable when the user looks down at a
+    phone held low, exactly the common case, so it must stay secondary.
+- **Inference time is the open problem.** Session 1: 245 ms on the GPU
+  delegate, main thread. Session 2 in the worker: GPU 549 ms, CPU 1251 ms.
+  Two to four fixes per second. Suspects: Vanadium's per-site JavaScript
+  JIT being off by default (the MediaPipe glue and XNNPACK paths are
+  JavaScript-heavy), thermal throttling after a long session, or the
+  worker's WebGL context not being hardware accelerated. Next: retest with
+  JIT allowed for the site; if still slow, switch the spacing cue to the
+  BlazeFace detector (six keypoints incl. both eye centres, about a
+  millisecond) and keep the landmarker only for the iris fallback.
+
 Not yet measured: latency, one-eye tracking at close range, render fps
-with inference (session 1 render was visibly jerky at 245 ms blocking).
+with inference now that it is in a worker.
