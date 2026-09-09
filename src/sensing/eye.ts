@@ -19,6 +19,7 @@
  * Screen frame (also the device frame): x right, y up, z toward the user.
  */
 import { RateMeter } from './rate';
+import { OneEuroFilter } from './filter';
 import type { DetectResult, FaceResult, InMsg, OutMsg, Role } from './eye.worker';
 
 export const IRIS_MM = 11.7;
@@ -131,6 +132,13 @@ export class EyeTracker {
   private bridgeAtFix = 0;
   private displacement = () => 0;
   private sizeSamples: { iris: number; ipd: number; t: number }[] = [];
+  /**
+   * Lateral eye position is filtered hard: at rest the cutoff is 0.5 Hz, so
+   * hand tremor and keypoint jitter (a few mm) vanish, while a deliberate
+   * head move of 10 cm/s raises the cutoff enough to follow without lag.
+   */
+  private readonly fx = new OneEuroFilter(0.5, 8, 1);
+  private readonly fy = new OneEuroFilter(0.5, 8, 1);
   private probe: { delegate: Delegate; ms: number[] } | null = null;
   private captureW = 0;
   private captureH = 0;
@@ -350,10 +358,10 @@ export class EyeTracker {
     const dA = Math.hypot(A.u - axisU, A.v - axisV), dB = Math.hypot(B.u - axisU, B.v - axisV);
     const sideA: EyeSide = 'right', sideB: EyeSide = 'left';
     const other: EyeSide = this.chosen === 'left' ? 'right' : 'left';
-    const otherNearer = other === sideA ? dA < dB - 0.2 * ipdPx : dB < dA - 0.2 * ipdPx;
+    const otherNearer = other === sideA ? dA < dB - 0.35 * ipdPx : dB < dA - 0.35 * ipdPx;
     if (otherNearer) {
       if (!this.switchSince) this.switchSince = now;
-      if (now - this.switchSince > 300) { this.chosen = other; this.switchSince = 0; }
+      if (now - this.switchSince > 600) { this.chosen = other; this.switchSince = 0; this.reacquiredT = now; }
     } else this.switchSince = 0;
     const E = this.chosen === sideA ? A : B;
     void sideB;
@@ -442,10 +450,10 @@ export class EyeTracker {
     const visibleOnly: EyeSide | null = L.visible && !R.visible ? 'left' : R.visible && !L.visible ? 'right' : null;
     if (visibleOnly && visibleOnly !== this.chosen) { this.chosen = visibleOnly; this.switchSince = 0; }
     else {
-      const otherNearer = other === 'left' ? distL < distR - 0.2 * ipdPx : distR < distL - 0.2 * ipdPx;
+      const otherNearer = other === 'left' ? distL < distR - 0.35 * ipdPx : distR < distL - 0.35 * ipdPx;
       if (otherNearer && !visibleOnly) {
         if (!this.switchSince) this.switchSince = now;
-        if (now - this.switchSince > 300) { this.chosen = other; this.switchSince = 0; }
+        if (now - this.switchSince > 600) { this.chosen = other; this.switchSince = 0; this.reacquiredT = now; }
       } else this.switchSince = 0;
     }
     const E = this.chosen === 'left' ? L : R;
@@ -496,6 +504,7 @@ export class EyeTracker {
     const now = performance.now();
     const lostFor = now - this.lastFaceT;
     if (!this.tracking || !this.fix || lostFor > LOST_HOLD_MS) {
+      this.fx.reset(); this.fy.reset();
       const k = 1 - Math.exp(-dt / (this.tracking ? 4 : 0.5));
       this.eye.x += (0 - this.eye.x) * k;
       this.eye.y += (0 - this.eye.y) * k;
@@ -505,14 +514,15 @@ export class EyeTracker {
     const f = this.fix;
     const ahead = Math.min(0.15, Math.max(0, (Math.min(now, this.lastFaceT) - f.t) / 1000));
     const phoneMoved = this.displacement() - this.bridgeAtFix;
-    const tx = f.x + f.vx * ahead;
-    const ty = f.y + f.vy * ahead;
+    const gentle = now - this.reacquiredT < 800;
+    // Distance: dead-reckoned and lightly smoothed (zoom must feel immediate).
     const tz = Math.max(0.05, f.z + f.vz * ahead + phoneMoved);
-    const tau = now - this.reacquiredT < 800 ? 0.35 : 0.05;
-    const k = 1 - Math.exp(-dt / tau);
-    this.eye.x += (tx - this.eye.x) * k;
-    this.eye.y += (ty - this.eye.y) * k;
+    const k = 1 - Math.exp(-dt / (gentle ? 0.35 : 0.05));
     this.eye.z += (tz - this.eye.z) * k;
+    // Lateral: no extrapolation, speed-adaptive smoothing; extra gentle after a gap or an eye switch.
+    this.fx.minCutoff = this.fy.minCutoff = gentle ? 0.25 : 0.5;
+    this.eye.x = this.fx.filter(f.x, now);
+    this.eye.y = this.fy.filter(f.y, now);
   }
 
   static available(): boolean {
