@@ -11,6 +11,7 @@ import { Minimap } from './minimap';
 import { EyeTracker } from '../sensing/eye';
 import { calibrationMode } from './calibrate';
 import { Tracer } from './trace';
+import { OrientationPredictor } from '../sensing/predict.ts';
 
 const params = new URLSearchParams(location.search);
 // Worlds live under ./worlds/<name>/world.json; later a Swarm reference goes here.
@@ -65,7 +66,6 @@ async function main(): Promise<void> {
     eye: (params.get('eyeside') as 'auto' | 'left' | 'right' | null) ?? 'auto',
   });
   eyes.setDisplacementSource(() => throttle.x);
-  eyes.setOrientationSource(() => orientation.quaternion);
   // Phone translation from the accelerometer (D-34), so the eye can be held as a world position.
   // Off by default until tuned from traces (trace session 2 showed 5 cm/s velocity bias); `?inertial` or the panel enables it.
   let lastAcc: [number, number, number, number] = [0, 0, 0, 0];
@@ -90,7 +90,7 @@ async function main(): Promise<void> {
     onEyes: (on) => { if (on) startEyes(); else { eyes.stop(); hud.flash('eye tracking off'); } },
     onInertial: (on) => { eyes.setInertial(on); hud.flash(`translation compensation ${on ? 'on' : 'off'}`); },
     predictMs: () => predictMs,
-    onPredict: (ms) => { predictMs = ms; hud.flash(`orientation prediction ${ms} ms`); },
+    onPredict: (ms) => { predictMs = ms; predictor.horizonMs = ms; hud.flash(`orientation prediction ${ms} ms`); },
     onEyeCalibrate: (m) => { const n = eyes.calibrate(m); hud.flash(n ? `calibrated at ${(m * 100).toFixed(1)} cm from ${n} samples: f = ${eyes.focalPx.toFixed(0)} px` : 'hold still with your face in view, then try again'); },
   });
 
@@ -146,25 +146,13 @@ async function main(): Promise<void> {
   const yawQ = new THREE.Quaternion();
   const Y = new THREE.Vector3(0, 1, 0);
   const eyeOffset = new THREE.Vector3();
-  // Orientation prediction over the display latency (D-35): the picture is shown 20–40 ms after the
-  // sensor sample, and hand tremor at 10 Hz moves 0.5–1° in that time. Extrapolate with the angular rate.
-  const qPrev = new THREE.Quaternion();
-  const qDelta = new THREE.Quaternion();
-  const qPred = new THREE.Quaternion();
-  let havePrev = false;
-  const predictOrientation = (q: THREE.Quaternion, dt: number): THREE.Quaternion => {
-    if (!havePrev || dt <= 0 || predictMs <= 0) { qPrev.copy(q); havePrev = true; return qPred.copy(q); }
-    // delta = q * prev^-1 (rotation over the last frame, world frame); scale its angle by predictMs / dt.
-    qDelta.copy(qPrev).invert().premultiply(q);
-    const w = THREE.MathUtils.clamp(qDelta.w, -1, 1);
-    const angle = 2 * Math.acos(Math.abs(w));
-    qPrev.copy(q);
-    if (angle < 1e-5) return qPred.copy(q);
-    const s = Math.sqrt(1 - w * w) || 1e-9;
-    const axis = new THREE.Vector3(qDelta.x / s, qDelta.y / s, qDelta.z / s).multiplyScalar(Math.sign(qDelta.w) || 1);
-    const predAngle = Math.min(angle * (predictMs / 1000) / dt, 0.2); // cap at ~11° of extrapolation
-    return qPred.copy(q).premultiply(qDelta.setFromAxisAngle(axis, predAngle));
-  };
+  // Orientation propagation and prediction over the display latency (D-35): see sensing/predict.ts.
+  const predictor = new OrientationPredictor();
+  predictor.horizonMs = predictMs;
+  throttle.onGyro((rx, ry, rz, gdt, now) => predictor.feedGyro(rx, ry, rz, gdt, now));
+  const predictOrientation = (q: THREE.Quaternion, _dt: number): THREE.Quaternion => predictor.predict(q, performance.now());
+  // The eye fusion must see the same orientation the renderer uses.
+  eyes.setOrientationSource(() => predictor.out);
   let last = performance.now();
 
   const frame = (now: number) => {
@@ -188,6 +176,9 @@ async function main(): Promise<void> {
       const rec: Record<string, unknown> = {
         k: 'f', t: performance.now(), dt: Math.round(dt * 1000 * 10) / 10,
         q: [q.x, q.y, q.z, q.w].map((v) => Math.round(v * 1e4) / 1e4),
+        qs: [orientation.quaternion.x, orientation.quaternion.y, orientation.quaternion.z, orientation.quaternion.w].map((v) => Math.round(v * 1e4) / 1e4),
+        age: Math.round(predictor.sampleAgeMs * 10) / 10,
+        gyro: predictor.gyroFresh ? predictor.gyroSign : null,
         e: [eyes.eye.x, eyes.eye.y, eyes.eye.z].map((v) => Math.round(v * 1e4) / 1e4),
         dw: [eyes.dirWorld.x, eyes.dirWorld.y, eyes.dirWorld.z].map((v) => Math.round(v * 1e4) / 1e4),
         ew: [eyes.eyeWorld.x, eyes.eyeWorld.y, eyes.eyeWorld.z].map((v) => Math.round(v * 1e4) / 1e4),

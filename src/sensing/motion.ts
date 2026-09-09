@@ -95,6 +95,7 @@ export class ThrottleGesture {
   private lastT = 0;
   private readonly listeners = new Set<(i: Impulse) => void>();
   private readonly vectorListeners = new Set<(ax: number, ay: number, az: number, dps: number, dt: number, now: number) => void>();
+  private readonly gyroListeners = new Set<(rx: number, ry: number, rz: number, dt: number, now: number) => void>();
 
   /**
    * Displacement estimate along the screen normal, metres, positive = away
@@ -151,6 +152,12 @@ export class ThrottleGesture {
     return () => this.vectorListeners.delete(fn);
   }
 
+  /** Gyroscope angular rate (device frame, rad/s) from devicemotion.rotationRate: x = beta, y = gamma, z = alpha. */
+  onGyro(fn: (rx: number, ry: number, rz: number, dt: number, now: number) => void): () => void {
+    this.gyroListeners.add(fn);
+    return () => this.gyroListeners.delete(fn);
+  }
+
   private emitVector(ax: number, ay: number, az: number, dps: number, dt: number, now: number): void {
     for (const fn of this.vectorListeners) fn(ax, ay, az, dps, dt, now);
   }
@@ -163,6 +170,11 @@ export class ThrottleGesture {
     // `interval` is ms in the spec; some browsers report seconds.
     let dt = e.interval > 1 ? e.interval / 1000 : e.interval;
     if (!dt || !isFinite(dt)) dt = 1 / 60;
+    if (rr && rr.alpha !== null && this.gyroListeners.size) {
+      const D = Math.PI / 180;
+      const now = performance.now();
+      for (const fn of this.gyroListeners) fn((rr.beta ?? 0) * D, (rr.gamma ?? 0) * D, rr.alpha * D, dt, now);
+    }
 
     const a = e.acceleration;
     if (a && a.z !== null) {

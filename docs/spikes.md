@@ -380,5 +380,20 @@ latency-induced error at 33 ms and still removes a third at 50 ms. This
 error applies to the whole scene regardless of eye tracking, and at about
 1° rms it is of the same size as everything the eye filter was blamed for.
 
+Trace session 3 (2026-09-09, first prediction implementation): Peter: "worse
+than earlier, from the very beginning, a lot of shaking". Cause found in the
+traces: the orientation sensor delivers only about 51 distinct samples per
+second (40 % of frames repeat the previous orientation, gaps 17–33 ms), so
+predicting from the last frame's change alternated between nothing and
+double. Roughness of the rendered orientation doubled (0.125° → 0.242° per
+frame; reproduced offline by applying the same rule to session 2). The
+repeated samples were themselves a 1° step every other frame in all
+sessions, part of the jitter reported from the start. Offline on session 2:
+propagating the last distinct sample by its age with a smoothed rate brings
+roughness to 0.093° (below the raw 0.125°); adding a 25 ms lookahead from
+a rate estimated from the samples gives 0.156°. A true gyro rate should do
+better; implemented with an online sign check (`sensing/predict.ts`), and
+until the gyro is verified only age propagation is applied.
+
 Not yet measured: one-eye tracking below about 15 cm (the detector needs
-most of the face); confirmation recording with prediction on.
+most of the face); confirmation recording with gyro propagation.
