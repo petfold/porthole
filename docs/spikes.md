@@ -395,5 +395,15 @@ a rate estimated from the samples gives 0.156°. A true gyro rate should do
 better; implemented with an online sign check (`sensing/predict.ts`), and
 until the gyro is verified only age propagation is applied.
 
+Trace session 4 (2026-09-09, age propagation; Peter: "somewhat better"):
+rendered-orientation roughness 0.082°/frame (p95 0.47°) against 0.125–0.217°
+in sessions 1–3 and 0.108° for the raw sensor; eye screen-direction
+roughness p95 0.90° against 1.18–1.31°. The gyro lookahead did not run: the
+motion handler returned before emitting the gyro whenever the Generic
+Sensor accelerometer was active (fixed). Replaying session 4 through the
+fusion with 20 filter settings changes eye roughness by at most 0.06°
+(0.235–0.291°) while lag ranges 50–400 ms: the fusion filter is no longer
+the limit, so 1 Hz/β4 (lowest lag) stays.
+
 Not yet measured: one-eye tracking below about 15 cm (the detector needs
-most of the face); confirmation recording with gyro propagation.
+most of the face); confirmation recording with the gyro lookahead active.

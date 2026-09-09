@@ -163,18 +163,19 @@ export class ThrottleGesture {
   }
 
   private onMotion = (e: DeviceMotionEvent): void => {
-    // The Generic Sensor path has priority once it delivers readings.
-    if (this.kind === 'linear-acceleration-sensor') return;
     const rr = e.rotationRate;
     const dps = rr ? Math.hypot(rr.alpha ?? 0, rr.beta ?? 0, rr.gamma ?? 0) : 0;
     // `interval` is ms in the spec; some browsers report seconds.
     let dt = e.interval > 1 ? e.interval / 1000 : e.interval;
     if (!dt || !isFinite(dt)) dt = 1 / 60;
+    // The gyro is only available here, whichever acceleration source is in use.
     if (rr && rr.alpha !== null && this.gyroListeners.size) {
       const D = Math.PI / 180;
       const now = performance.now();
       for (const fn of this.gyroListeners) fn((rr.beta ?? 0) * D, (rr.gamma ?? 0) * D, rr.alpha * D, dt, now);
     }
+    // The Generic Sensor path has priority for acceleration once it delivers readings.
+    if (this.kind === 'linear-acceleration-sensor') return;
 
     const a = e.acceleration;
     if (a && a.z !== null) {
