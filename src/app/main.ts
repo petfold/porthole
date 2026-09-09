@@ -73,7 +73,7 @@ async function main(): Promise<void> {
     onStop: () => stop(),
     eyes,
     onEyes: (on) => { if (on) startEyes(); else { eyes.stop(); hud.flash('eye tracking off'); } },
-    onEyeCalibrate: (m) => hud.flash(eyes.calibrate(m) ? `calibrated at ${(m * 100).toFixed(0)} cm: f = ${eyes.focalPx.toFixed(0)} px` : 'no face in view'),
+    onEyeCalibrate: (m) => { const n = eyes.calibrate(m); hud.flash(n ? `calibrated at ${(m * 100).toFixed(1)} cm from ${n} samples: f = ${eyes.focalPx.toFixed(0)} px` : 'hold still with your face in view, then try again'); },
   });
 
   /** Stop dead and make the current phone position the new base. */

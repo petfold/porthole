@@ -29,6 +29,10 @@ export interface EyeFix {
   x: number;
   y: number;
   z: number;
+  /** Eye velocity in the screen frame, m/s, from the previous fix (0 after a gap). */
+  vx: number;
+  vy: number;
+  vz: number;
   eye: EyeSide;
   irisPx: number;
   /** Distance from the IPD cue when both eyes were visible, else null. */
@@ -46,6 +50,12 @@ export interface EyeTrackerOptions {
 }
 
 const KEY_F = 'porthole.eyeFocalPx';
+/** How long a lost face keeps its last position before drifting back to the default. */
+const LOST_HOLD_MS = 20_000;
+
+function clampAbs(v: number, m: number): number {
+  return Math.max(-m, Math.min(m, v));
+}
 
 export class EyeTracker {
   readonly rate = new RateMeter();
@@ -68,13 +78,19 @@ export class EyeTracker {
   private lastVideoT = -1;
   private chosen: EyeSide = 'right';
   private switchSince = 0;
+  /** performance.now() of the last frame in which a face was found. */
+  private lastFaceT = 0;
+  /** Recent iris sizes (px, with timestamps) for a robust calibration. */
+  private irisSamples: { px: number; t: number }[] = [];
+  /** Time when tracking was reacquired after a gap; smoothing is gentler for a moment. */
+  private reacquiredT = -Infinity;
   /** Inertial displacement (m, positive = away from the user) at the last fix, for bridging. */
   private bridgeBase = 0;
   private bridgeAtFix = 0;
   private displacement = () => 0;
 
   constructor(opts?: Partial<EyeTrackerOptions>) {
-    this.opts = { rate: 10, cameraOffset: { x: 0, y: 0.072 }, focalPx: null, ...opts };
+    this.opts = { rate: 20, cameraOffset: { x: 0, y: 0.072 }, focalPx: null, ...opts };
     let stored: number | null = null;
     try { const v = localStorage.getItem(KEY_F); if (v) stored = parseFloat(v) || null; } catch { /* no storage */ }
     this.focalPx = this.opts.focalPx ?? stored ?? 0; // 0 = derive from the capture size once known
@@ -141,12 +157,26 @@ export class EyeTracker {
     this.opts.rate = rate;
   }
 
-  /** Calibrate the focal length: the user holds the phone at `distanceM` from the eye. */
-  calibrate(distanceM: number): boolean {
-    if (!this.fix) return false;
-    this.focalPx = (this.fix.irisPx * distanceM) / (IRIS_MM / 1000);
+  /**
+   * Calibrate the focal length: the user holds the phone at `distanceM` from
+   * the eye. Uses the median iris size of the last 1.5 s so one noisy frame
+   * cannot set it. Returns the number of samples used, 0 if too few.
+   */
+  calibrate(distanceM: number): number {
+    const now = performance.now();
+    const recent = this.irisSamples.filter((s) => now - s.t < 1500).map((s) => s.px).sort((a, b) => a - b);
+    if (recent.length < 3) return 0;
+    const median = recent[Math.floor(recent.length / 2)] as number;
+    this.focalPx = (median * distanceM) / (IRIS_MM / 1000);
     try { localStorage.setItem(KEY_F, String(this.focalPx)); } catch { /* ignore */ }
-    return true;
+    // Re-express the current fix with the new focal length so the view does not jump later.
+    if (this.fix) {
+      const scale = distanceM / this.fix.z;
+      this.fix = { ...this.fix, x: this.fix.x * scale, y: this.fix.y * scale, z: distanceM, vx: 0, vy: 0, vz: 0 };
+      this.bridgeBase = distanceM;
+      this.bridgeAtFix = this.displacement();
+    }
+    return recent.length;
   }
 
   private schedule(): void {
@@ -167,9 +197,18 @@ export class EyeTracker {
     this.rate.tick(now);
     const face = res.faceLandmarks[0];
     if (!face || face.length < 478) {
-      if (this.fix && now - this.fix.t > 1500) { this.fix = null; this.status = 'no face'; }
+      // Keep the last fix: the view must not jump when the face is lost for a moment.
+      // Only after a long absence does update() drift back to the default.
+      if (this.fix) {
+        const gap = now - this.lastFaceT;
+        this.status = gap < LOST_HOLD_MS ? 'no face · holding last' : 'no face · returning to default';
+        if (gap > LOST_HOLD_MS + 5000) this.fix = null;
+      } else this.status = 'no face';
       return;
     }
+    const gap = now - this.lastFaceT;
+    if (this.fix && gap > 400) this.reacquiredT = now;
+    this.lastFaceT = now;
     this.status = 'tracking';
     const W = v.videoWidth, H = v.videoHeight;
     const px = (i: number) => { const l = face[i]!; return { u: l.x * W, v: l.y * H }; };
@@ -201,27 +240,53 @@ export class EyeTracker {
     const x = -((E.u - W / 2) / this.focalPx) * z + this.opts.cameraOffset.x;
     const y = -((E.v - H / 2) / this.focalPx) * z + this.opts.cameraOffset.y;
     const ipdDistance = ipdPx > 1 ? (this.focalPx * (IPD_MM / 1000)) / ipdPx : null;
-    this.fix = { x, y, z, eye: this.chosen, irisPx: E.d, ipdDistance, t: now };
+    // The fix describes the frame at t0 (capture), not at the end of inference.
+    const prev = this.fix;
+    const dtFix = prev ? (t0 - prev.t) / 1000 : 0;
+    let vx = 0, vy = 0, vz = 0;
+    if (prev && dtFix > 0.01 && dtFix < 0.3) {
+      // Velocity of the eye relative to the phone, minus what the phone itself did (bridged).
+      const phoneMoved = this.displacement() - this.bridgeAtFix;
+      vx = clampAbs((x - prev.x) / dtFix, 1.5);
+      vy = clampAbs((y - prev.y) / dtFix, 1.5);
+      vz = clampAbs((z - phoneMoved - prev.z) / dtFix, 1.5);
+    }
+    this.fix = { x, y, z, vx, vy, vz, eye: this.chosen, irisPx: E.d, ipdDistance, t: t0 };
+    this.irisSamples.push({ px: E.d, t: now });
+    if (this.irisSamples.length > 60) this.irisSamples.shift();
     this.bridgeAtFix = this.displacement();
     this.bridgeBase = z;
   }
 
-  /** Call every frame: fuse the last fix with the inertial displacement and smooth. */
+  /**
+   * Call every frame. Target = last fix dead-reckoned forward by its velocity
+   * (capped), plus the phone's own inertial displacement since the fix; then
+   * a short exponential smoothing. After a tracking gap the smoothing is
+   * gentler for a moment so reacquisition does not jump.
+   */
   update(dt: number): void {
-    if (!this.tracking || !this.fix) {
-      // Fall back to the default distance, gently.
-      const k = 1 - Math.exp(-dt / 0.5);
+    const now = performance.now();
+    const lostFor = now - this.lastFaceT;
+    if (!this.tracking || !this.fix || lostFor > LOST_HOLD_MS) {
+      // Return to the default distance slowly (only after a long loss, or when off).
+      const k = 1 - Math.exp(-dt / (this.tracking ? 4 : 0.5));
       this.eye.x += (0 - this.eye.x) * k;
       this.eye.y += (0 - this.eye.y) * k;
       this.eye.z += (DEFAULT_EYE_DISTANCE_M - this.eye.z) * k;
       return;
     }
-    // Moving the phone away from the user (positive displacement) increases the eye distance.
-    const bridged = Math.max(0.05, this.bridgeBase + (this.displacement() - this.bridgeAtFix));
-    const k = 1 - Math.exp(-dt / 0.12);
-    this.eye.x += (this.fix.x - this.eye.x) * k;
-    this.eye.y += (this.fix.y - this.eye.y) * k;
-    this.eye.z += (bridged - this.eye.z) * k;
+    const f = this.fix;
+    // Extrapolate at most 150 ms; beyond that hold the position (a lost face stops the clock).
+    const ahead = Math.min(0.15, Math.max(0, (Math.min(now, this.lastFaceT) - f.t) / 1000));
+    const phoneMoved = this.displacement() - this.bridgeAtFix; // + = phone moved away from the user
+    const tx = f.x + f.vx * ahead;
+    const ty = f.y + f.vy * ahead;
+    const tz = Math.max(0.05, f.z + f.vz * ahead + phoneMoved);
+    const tau = now - this.reacquiredT < 800 ? 0.35 : 0.05;
+    const k = 1 - Math.exp(-dt / tau);
+    this.eye.x += (tx - this.eye.x) * k;
+    this.eye.y += (ty - this.eye.y) * k;
+    this.eye.z += (tz - this.eye.z) * k;
   }
 
   static available(): boolean {

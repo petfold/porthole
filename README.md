@@ -36,7 +36,8 @@ context). Tap to start.
 - **Eye tracking (experimental):** panel → Eye (S8) → toggle, or add `?eye`.
   Grants the front camera; the window then widens as you bring the phone
   closer and shifts as you move your head, true to the geometry. Calibrate
-  once by holding the phone at 30 or 40 cm and tapping the matching button.
+  once: hold the phone a known distance from your eye for a second (an A4
+  sheet's long edge is 29.7 cm) and tap the matching button.
 - **Map:** bottom left, north up, centred on you. The red dot is you; the
   sector shows where you are looking and how wide the window is.
 - **Settings:** the gear at top right, or add `?panel` to the URL. Shows
