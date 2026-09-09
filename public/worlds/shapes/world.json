@@ -1,0 +1,21 @@
+{
+  "name": "shapes",
+  "frame": { "units": "metres", "up": "Y" },
+  "spawn": { "position": [0, 0, 14], "heading": 0 },
+  "eyeHeight": 1.6,
+  "ground": { "size": 200, "color": "#4a6b45", "grid": true },
+  "sky": { "color": "#a9c9e6", "fog": 140 },
+  "primitives": [
+    { "id": "cube-red",     "type": "box",      "position": [0, 0, 0],    "size": [2, 2, 2],   "color": "#c0392b" },
+    { "id": "cube-blue",    "type": "box",      "position": [-6, 0, -4],  "size": [3, 1.5, 3], "yaw": 30, "color": "#2980b9" },
+    { "id": "tower",        "type": "box",      "position": [8, 0, -10],  "size": [2, 9, 2],   "color": "#7f8c8d" },
+    { "id": "pyramid-gold", "type": "pyramid",  "position": [6, 0, 2],    "size": [3, 4, 3],   "color": "#f1c40f" },
+    { "id": "pyramid-green","type": "pyramid",  "position": [-10, 0, 6],  "size": [5, 3, 5],   "yaw": 45, "color": "#27ae60" },
+    { "id": "pillar",       "type": "cylinder", "position": [0, 0, -14],  "size": [1, 6, 1],   "color": "#e67e22" },
+    { "id": "ball",         "type": "sphere",   "position": [-3, 0, 14],  "size": [1.2, 1.2, 1.2], "color": "#8e44ad" },
+    { "id": "far-cube",     "type": "box",      "position": [30, 0, -30], "size": [6, 6, 6],   "color": "#34495e" },
+    { "id": "far-pyramid",  "type": "pyramid",  "position": [-35, 0, -25],"size": [10, 12, 10],"color": "#d35400" }
+  ],
+  "objects": [],
+  "rooms": []
+}

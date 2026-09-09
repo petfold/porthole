@@ -55,7 +55,7 @@ touching anything.
 Target browser: Vanadium on GrapheneOS (Chromium). Test there first, then
 desktop Chromium.
 
-## Repository layout (to create)
+## Repository layout
 
 ```
 porthole/

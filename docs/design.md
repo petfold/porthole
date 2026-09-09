@@ -41,9 +41,10 @@ Non-goals for the PoC (each has a "later" note in §10):
 | Window | The phone screen, rendered with the screen's true angular size. |
 | Vehicle | The thing you ride. Its pose is your pose. It has speed and heading. |
 | Avatar | A peer's presence in the world: pose, velocity, name, amplifier flag. Never stored. |
-| Earshot | The set of peers whose audio you receive. Nearest N plus anyone amplified. |
+| Earshot | The set of peers whose audio you receive: the N loudest as perceived from where you stand (D-19), restricted to your room if it is closed (D-20). |
 | Object | A movable thing with a durable pose and a holder. Stored in the CRDT. |
-| Amplifier | A per-avatar flag. Amplified peers are always in earshot and use a gentler distance rolloff. For talks and performances. |
+| Amplifier | A per-avatar flag that multiplies the speaker's loudness. Range grows through the ordinary distance rolloff; nothing else changes (D-19). For talks and performances. |
+| Room | An axis-aligned box in `world.json`. A closed room cuts audibility across its boundary in both directions (D-20). |
 
 ## 4. Components
 
@@ -51,9 +52,13 @@ Non-goals for the PoC (each has a "later" note in §10):
 
 A world is a Swarm collection containing:
 
-- `world.json` — name, coordinate frame (metres, Y up), spawn pose, list of
-  object definitions (id, model reference, initial pose), rendering hints
-- `scene.glb` — the static scene, hand-built for the PoC (D-12)
+- `world.json` — name, coordinate frame (metres, Y up), spawn pose, eye
+  height, ground, sky, a list of **primitives** (box, pyramid, cylinder,
+  sphere with position, size, yaw, colour), rooms (D-20), a list of object
+  definitions (id, model reference, initial pose), rendering hints
+- `scene.glb` — optional static glTF scene, hand-built for the PoC (D-12).
+  Phase 1a uses primitives only and ships the world inside the app bundle
+  under `worlds/<name>/` (D-21); a Swarm reference replaces that path later.
 - `objects/*.glb` — models for movable objects
 
 The collection reference *is* the world id. It doubles as the topic seed for
@@ -74,21 +79,30 @@ fused rotation vector: `deviceorientation` (or the Generic Sensor API
 `RelativeOrientationSensor` where available). Gyro-based; yaw drifts slowly.
 Nothing in porthole needs absolute yaw, because:
 
-**Recentre.** A long press on the screen defines the current phone pose as
-"looking straight ahead along the vehicle". View direction is phone
-orientation relative to that reference. This is a rotation of the whole
-world, so geometry and audio stay consistent (D-05).
+**Recentre.** A double-tap (or the panel button) defines the current phone
+yaw as "straight ahead along the vehicle". Only yaw is referenced; pitch and
+roll come from gravity and need no reference. The vehicle heading absorbs the
+offset so the view never jumps. This is a rotation of the whole world about
+the vertical, so geometry and audio stay consistent (D-05). Recentre matters
+only in the `yawrate` steering mode; in the other modes nothing is referenced
+to the body and it is inert (D-22).
 
-**Steering.** The vehicle's heading follows the phone's yaw relative to the
-recentred reference, like handlebars. Camera looks along the vehicle heading.
-(Alternative for later: roll steers, yaw looks freely — see D-10.)
+**Steering.** Three modes are implemented for the Phase 1 feel test (D-22):
+`look` (default) — heading equals view yaw, you go where you look;
+`yawrate` — phone yaw relative to the recentred reference is a handlebar
+angle and the heading turns at a proportional rate, the view being the phone
+relative to the vehicle; `roll` — banking the phone steers and yaw looks
+freely. D-10 is settled after trying them on a phone.
 
 **Throttle.** A push of the phone away from the body adds to vehicle speed;
 a pull subtracts. Read `devicemotion` linear acceleration along the screen
 normal, in the *device* frame, so orientation error cannot leak gravity into
 the reading. Integrate the first half of the gesture (until the sign flips)
-to get an impulse; add it to speed, clamped. Speed persists — the vehicle
-coasts. A touch on screen is a brake: speed decays to zero while held.
+to get an impulse; add it to speed, clamped. Then wait until the phone is
+still before arming again, so bringing the phone back is not read as the
+opposite gesture. Ignore gestures during fast rotation (the sensor sits off
+the rotation axis and reads centripetal acceleration). Speed persists — the
+vehicle coasts. A touch on screen is a brake: speed decays to zero while held.
 
 **Flight.** Off in the PoC. The vehicle stays on the world's ground height.
 A flag in `world.json` may enable free flight later; controls then follow the
@@ -132,8 +146,11 @@ Awareness is never written to Swarm.
 only rewritten on put-down.
 
 **Peer selection.** With more peers than `MAX_PEERS` (default 10) present in
-a world, the client keeps connections to the nearest `MAX_PEERS` by world
-distance, recomputed every 2 s with hysteresis, plus every amplified peer.
+a world, the client keeps connections to the `MAX_PEERS` loudest as perceived
+from its own position — gain divided by distance to the rolloff power, so an
+amplified peer ranks as if it were closer (D-19) — recomputed every 2 s with
+hysteresis. Peers separated from the listener by a closed room wall rank
+last (D-20).
 Peers outside the set are still drawn from awareness if any connected peer
 relays it (the Yjs awareness protocol relays), but are not heard.
 
@@ -152,7 +169,11 @@ MediaStreamSource → GainNode (amplifier) → PannerNode (HRTF) → destination
 
 - `PannerNode` in HRTF mode, `distanceModel: 'inverse'`, `refDistance: 1`,
   `rolloffFactor: 2` (steeper than physics, so two metres away is quiet —
-  D-06). Amplified peers use `rolloffFactor: 0.5` and a 1.5× gain.
+  D-06). Amplified peers keep the same rolloff and get a gain multiplier
+  (start 4×); their range grows only because they are louder (D-19).
+- Rooms (D-20): if either the listener or the speaker is inside a closed
+  room and they are not in the same room, the speaker's gain is zero. Room
+  membership is computed locally from the dead-reckoned poses each frame.
 - The listener's pose is the local vehicle pose. Head is assumed to face the
   phone; the phone is assumed in front of the body. Steering rotations move
   the listener with the vehicle — correct under that assumption.
@@ -231,6 +252,8 @@ at start. Later: `dappdata` / Sign-In with Ethereum for a stable identity
 
 - Full-mesh WebRTC limits earshot to about ten peers.
 - Head orientation is assumed equal to phone orientation.
+- Rooms are axis-aligned boxes with a hard audio cut; no doors, no
+  attenuation through walls.
 - Yaw drifts slowly between recentres; a recentre is one long press away.
 - Screen physical size is estimated; the FOV calibration is a manual slider.
 - Awareness has no authentication; anyone who can read the world's feeds can

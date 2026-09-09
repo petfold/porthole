@@ -1,0 +1,24 @@
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #eee;
+  font: 14px/1.4 system-ui, sans-serif; -webkit-user-select: none; user-select: none; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#hud { position: fixed; inset: 0; pointer-events: none; }
+#hud .status { position: absolute; left: 8px; bottom: 8px; padding: 4px 8px; background: rgba(0,0,0,.45);
+  border-radius: 6px; font-variant-numeric: tabular-nums; white-space: pre; }
+#hud .gear { position: absolute; right: 8px; top: 8px; pointer-events: auto; width: 40px; height: 40px;
+  border-radius: 20px; border: 0; background: rgba(0,0,0,.45); color: #eee; font-size: 20px; }
+#hud .panel { position: absolute; right: 8px; top: 56px; bottom: 56px; width: min(360px, calc(100vw - 16px));
+  overflow: auto; padding: 10px; background: rgba(0,0,0,.8); border-radius: 8px; pointer-events: auto; }
+#hud .panel h2 { font-size: 14px; margin: 10px 0 4px; }
+#hud .panel table { border-collapse: collapse; width: 100%; font-size: 12px; }
+#hud .panel td, #hud .panel th { padding: 2px 4px; text-align: left; border-bottom: 1px solid #333; }
+#hud .panel button, #hud .panel select { font: inherit; padding: 6px 10px; margin: 2px 4px 2px 0; }
+#hud .panel input[type=range] { width: 100%; }
+#hud .card { height: 12px; background: #f1c40f; margin: 6px 0; }
+#hud .warn { color: #f6b26b; }
+#start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+  background: #000; padding: 24px; }
+#start h1 { font-weight: 300; letter-spacing: .1em; }
+#start p { max-width: 32em; margin: 8px auto; }
+#start .small { opacity: .6; font-size: 12px; }
+#start button { font: inherit; font-size: 18px; padding: 12px 28px; border-radius: 24px; border: 0;
+  background: #eee; color: #000; margin: 16px 0; }

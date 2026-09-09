@@ -12,16 +12,30 @@ Run every spike in `spikes.md` and record results there. Stop and revise
 Exit: all spikes have a recorded result; open decisions that depended on them
 are closed in `decisions.md`.
 
-## Phase 1 — the window
+## Phase 1a — the window, local world (current)
 
-A single phone, a static world, correct rotation, a vehicle.
+A single phone, a primitive world shipped with the bundle, correct rotation,
+a vehicle (D-21). Spikes S1, S6, S7 run inside the app's `?debug` panel.
+
+- `world.json` with boxes, pyramids, a cylinder, a sphere; loaded from
+  `./worlds/shapes/`.
+- Orientation from `RelativeOrientationSensor`, falling back to
+  `deviceorientation`, then touch drag.
+- Throttle from `devicemotion` linear acceleration; hold to brake;
+  double-tap recentres.
+- Three steering modes switchable at runtime for the D-10 feel test.
+- FOV from the screen-size estimate plus the bank-card calibration slider.
+- Sensor/rate/impulse readout in the debug panel.
+
+Exit: Peter rides around the shapes on a GrapheneOS phone over `pnpm
+dev:phone`, records the S1/S6/S7 tables in `spikes.md`, and picks a steering
+mode (closes D-10, D-22, D-23).
+
+## Phase 1b — the window, from Swarm
 
 - Load `world.json` and `scene.glb` from a Swarm reference (local Bee or
   gateway).
-- Orientation from the sensor; recentre on long press; FOV from the
-  calibration slider.
-- Vehicle: yaw steers, push/pull throttles, touch brakes; ground-following.
-- Touch-drag fallback when sensors are unavailable.
+- Steering mode fixed per the D-10 decision; unused modes removed.
 - `scripts/publish-to-swarm` uploads the bundle and prints the `bzz` address.
 
 Exit: someone who has never seen the app opens the Swarm address on a

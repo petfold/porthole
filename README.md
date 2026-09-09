@@ -3,16 +3,55 @@
 A phone as a window onto a shared 3D world on Swarm.
 
 Hold the phone up and turn it: you look around. Push it away from you: you
-ride forward on a vehicle. Turn it: you steer. Other people in the world are
-heard through your headphones from where they stand — close voices loud,
-distant voices faint, an amplified speaker audible from anywhere. Pick up an
+ride forward on a vehicle. Pull it back: you slow. Other people in the world
+are heard through your headphones from where they stand — close voices loud,
+distant voices faint, a loud speaker audible from further away. Pick up an
 object and put it down somewhere else; everyone sees the same result.
 
 There is no server. The world, the app, and the durable state live on Swarm.
 Presence, voice, and object moves run peer-to-peer over WebRTC, with the
 phones finding each other through Swarm feeds.
 
-**Status:** design only. Proof of concept in planning. See `docs/`.
+**Status:** Phase 1a — single phone, local world of primitive shapes, sensor
+navigation. No networking yet. See `docs/plan.md`.
+
+## Try it on a phone
+
+```
+pnpm install
+pnpm dev:phone
+```
+
+Open `https://<this machine's LAN IP>:5173/` in Vanadium or Chrome on the
+phone and accept the self-signed certificate once (sensors need a secure
+context). Tap to start.
+
+- **Look:** turn the phone. The view has the screen's true angular size, so
+  it is a small window, not a wide game camera.
+- **Go:** push the phone away from you. Pull to slow or reverse. Speed
+  persists; the vehicle coasts.
+- **Brake:** touch and hold the screen.
+- **Recentre:** double-tap (only matters in the `yawrate` steering mode).
+- **Settings:** the gear at top right, or add `?debug` to the URL. Shows
+  sensor availability and rates, throttle impulses, the FOV calibration bar
+  (match it to a bank card), and the steering mode selector.
+
+URL options: `?mode=look|yawrate|roll`, `?orientation=generic-sensor|deviceorientation|drag`,
+`?world=./worlds/shapes/world.json`, `?debug`.
+
+## Try it on a desktop
+
+`pnpm dev`, open <http://localhost:5173/>. Drag to look, `W`/`S` or arrow
+keys to throttle, space to brake, `R` to recentre, `Q`/`E` to bank (for the
+`roll` mode).
+
+## Worlds
+
+A world is a folder with a `world.json` (see `public/worlds/shapes/`). Phase
+1a worlds are lists of primitives: `box`, `pyramid`, `cylinder`, `sphere`
+with `position` (base centre), `size`, optional `yaw`, and `color`. Later
+phases add a glTF scene, movable objects, and rooms, and load the folder from
+a Swarm reference instead of the bundle.
 
 ## Layout
 
@@ -22,6 +61,9 @@ phones finding each other through Swarm feeds.
 - `docs/spikes.md` — Phase 0 experiments
 - `docs/decisions.md` — decision log
 - `docs/references.md` — libraries and prior work
+- `src/` — app (`app/`, `sensing/`, `render/`, `world/`; later `presence/`,
+  `audio/`, `objects/`, `swarm/`)
+- `public/worlds/` — bundled worlds
 
 ## Related
 
@@ -29,4 +71,4 @@ phones finding each other through Swarm feeds.
 
 ## Licence
 
-To be decided (see `docs/decisions.md` D-15).
+BSD-3-Clause. See `LICENSE`.

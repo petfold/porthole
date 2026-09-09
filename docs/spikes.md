@@ -6,6 +6,11 @@ result in the slot. A failed spike changes the design; say what changed.
 Priority order: S1, S2, S4 first — the design depends on them. S3, S5, S6,
 S7 can run in parallel.
 
+S1, S6 and S7 are run from inside the app (D-21): open the app with `?debug`
+(or tap the gear) and the panel shows API availability, rates, throttle
+impulses with their spread, and the FOV calibration. Copy the numbers into
+the result slots below.
+
 ---
 
 ## S1 — Sensor APIs in Vanadium on GrapheneOS
