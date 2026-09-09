@@ -1,0 +1,75 @@
+# porthole — references
+
+## Own prior work
+
+- `swarm-collaborative-docs` — <https://github.com/Solar-Punk-Ltd/swarm-collaborative-docs>.
+  Yjs over Swarm: per-peer snapshot feeds, WebRTC with SDP signalling through
+  Swarm feeds, member discovery via feeds. The sync layer porthole builds on.
+- CRDT discussion, 6–7 July 2026 ("CRDTs and text editor operation
+  ordering"): the vase example; why a blockchain is the wrong tool for
+  real-time conflict; the design space (LWW on position → LWW on holder →
+  leases → rollback → design the conflict away). Basis for D-09.
+- Design discussion, 9 September 2026: sensor fusion on GrapheneOS, the
+  phone-as-window, vehicle controls, strict geometry, spatial audio, open 3D
+  world data. Basis for D-05, D-06, D-10.
+- `galley` (collaborative Typst on Swarm) and `dappdata` — sibling projects
+  with the same handoff structure; `dappdata` is the planned identity layer.
+
+## Swarm
+
+- Bee docs — <https://docs.ethswarm.org/>
+- bee-js — <https://github.com/ethersphere/bee-js> (12.x; feeds, uploads,
+  manifests)
+- Feeds, single-owner chunks, GSOC: Bee docs and the `swarm` skill
+  `references/recipes.md`. Note: GSOC pubsub needs an unreleased Bee; PSS
+  subscribe needs a full node. Hence WebRTC for live traffic.
+
+## Browser APIs
+
+- DeviceOrientation and DeviceMotion events — <https://w3c.github.io/deviceorientation/>
+- Generic Sensor API (`RelativeOrientationSensor`, `LinearAccelerationSensor`) —
+  <https://w3c.github.io/sensors/>
+- Web Audio `PannerNode`, HRTF panning, distance models —
+  <https://webaudio.github.io/web-audio-api/#PannerNode>
+- WebRTC — `RTCPeerConnection.addTrack`, Opus audio
+- `getUserMedia` constraints: `echoCancellation`, `noiseSuppression`
+
+## Yjs
+
+- Yjs docs — <https://docs.yjs.dev/>
+- Awareness protocol (`y-protocols/awareness`) — ephemeral per-client state
+  with timeout; used here for avatars
+- y-webrtc (for reference on how awareness rides WebRTC data channels)
+
+## Rendering
+
+- three.js — <https://threejs.org/>; glTF loader
+- `3d-tiles-renderer` (NASA AMMOS) — <https://github.com/NASA-AMMOS/3DTilesRendererJS>
+  — for later terrain/city streaming
+- OGC 3D Tiles — <https://www.ogc.org/standard/3dtiles/>
+
+## Spatial audio background
+
+- Head-related transfer functions; interaural time and level differences;
+  the ventriloquism effect (vision captures audio location within roughly
+  10–15°). Resonance Audio and Steam Audio as open alternatives to the
+  built-in panner if room acoustics are wanted later.
+- Spatial proximity chat precedents: Gather, SpatialChat, High Fidelity
+  spatial audio, Mozilla Hubs, WorkAdventure (open source).
+
+## Open world data (later)
+
+- Copernicus DEM; Sentinel-2; OpenStreetMap; Overture Maps; Google Open
+  Buildings 2.5D
+- National LoD2: 3D BAG (NL), German states, Luxembourg, Japan PLATEAU
+- awesome-citygml — <https://github.com/OloOcki/awesome-citygml>
+- Helsinki reality mesh (open, OBJ) — <https://hri.fi/data/en_GB/dataset/helsingin-3d-kaupunkimalli>
+- FlightGear / TerraGear as the open flight-sim precedent
+
+## Tracking background (later)
+
+- Monado (OpenXR runtime), Basalt VIO, OpenVINS, ORB-SLAM3 — visual-inertial
+  odometry if 6-DoF hand tracking is ever wanted
+- MediaPipe Face Landmarker (WASM) — head pose from the front camera for the
+  off-axis window and head-relative audio
+- Zero-velocity updates (ZUPT) — for bounded short-range inertial translation
