@@ -60,7 +60,7 @@ async function main(): Promise<void> {
   vehicle.throttleMode = (params.get('throttle') as ThrottleMode | null) ?? 'displacement';
 
   // Orientation prediction horizon (D-35), ms; declared early because the HUD reads it.
-  let predictMs = Number(params.get('predict') ?? 25);
+  let predictMs = Number(params.get('predict') ?? 0);
   const eyes = new EyeTracker({
     model: (params.get('model') as 'auto' | 'detector' | 'landmarker' | null) ?? 'auto',
     eye: (params.get('eyeside') as 'auto' | 'left' | 'right' | null) ?? 'auto',
@@ -179,6 +179,7 @@ async function main(): Promise<void> {
         qs: [orientation.quaternion.x, orientation.quaternion.y, orientation.quaternion.z, orientation.quaternion.w].map((v) => Math.round(v * 1e4) / 1e4),
         age: Math.round(predictor.sampleAgeMs * 10) / 10,
         gyro: predictor.gyroFresh ? predictor.gyroSign : null,
+        gr: predictor.gyroFresh ? [predictor.gyroRate.x, predictor.gyroRate.y, predictor.gyroRate.z].map((v) => Math.round(v * 1e4) / 1e4) : null,
         e: [eyes.eye.x, eyes.eye.y, eyes.eye.z].map((v) => Math.round(v * 1e4) / 1e4),
         dw: [eyes.dirWorld.x, eyes.dirWorld.y, eyes.dirWorld.z].map((v) => Math.round(v * 1e4) / 1e4),
         ew: [eyes.eyeWorld.x, eyes.eyeWorld.y, eyes.eyeWorld.z].map((v) => Math.round(v * 1e4) / 1e4),

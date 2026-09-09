@@ -17,8 +17,14 @@
 import * as THREE from 'three';
 
 export class OrientationPredictor {
-  /** Lookahead for display latency, ms. */
-  horizonMs = 25;
+  /**
+   * Lookahead for display latency, ms. 0 until the gyro axis mapping is
+   * verified offline: trace session 5 showed the gyro-driven lookahead
+   * predicting the sensor's future worse than age propagation alone.
+   */
+  horizonMs = 0;
+  /** Latest smoothed gyro rate, device frame, rad/s (read-only, for traces). */
+  get gyroRate(): THREE.Vector3 { return this.rateDev; }
   /** Cap on total propagation (age + horizon), ms. */
   maxAheadMs = 70;
   readonly out = new THREE.Quaternion();

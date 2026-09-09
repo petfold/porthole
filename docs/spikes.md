@@ -405,5 +405,17 @@ fusion with 20 filter settings changes eye roughness by at most 0.06°
 (0.235–0.291°) while lag ranges 50–400 ms: the fusion filter is no longer
 the limit, so 1 Hz/β4 (lowest lag) stays.
 
+Trace session 5 (2026-09-09, gyro lookahead active from 40 s in): worse
+than session 4. Orientation roughness 0.101°/frame (p95 0.80°) against
+0.082°/0.47°; the rendered orientation's rms error against the sensor's own
+reading 17–33 ms later was 2.1–2.3° against 0.7–0.9° with age propagation
+alone, i.e. the gyro-driven lookahead moved the picture the wrong way. The
+sign check needed 40 s to reach its threshold, which means the correlation
+between the assumed gyro axes (β→x, γ→y, α→z, device frame, applied on the
+right of the quaternion) and the observed rotation is weak: an axis is
+probably permuted or in the wrong frame. Lookahead disabled (horizon 0);
+age propagation stays. The trace now records the smoothed gyro vector so
+the mapping can be fitted offline from a future recording.
+
 Not yet measured: one-eye tracking below about 15 cm (the detector needs
-most of the face); confirmation recording with the gyro lookahead active.
+most of the face); the correct gyro axis mapping for lookahead.
