@@ -31,6 +31,22 @@ Exit: Peter rides around the shapes on a GrapheneOS phone over `pnpm
 dev:phone`, records the S1/S6/S7 tables in `spikes.md`, and picks a steering
 mode (closes D-10, D-22, D-23).
 
+## Phase 1c — the window follows the eye
+
+- Spike S8 first.
+- Front camera stream at low resolution; MediaPipe Face Landmarker in a
+  worker at a configurable 5–10 inferences/s.
+- Distance from iris diameter with an IPD cross-check; one-time focal
+  calibration in the settings panel.
+- Fusion with the inertial displacement estimator; fixes reset drift.
+- Off-axis frustum from the eye position (D-27); the 40 cm constant becomes
+  the fallback when no face is tracked.
+- Decide D-28 (throttle source).
+
+Exit: on the Pixel 7a, moving the eye from 40 cm to 10 cm widens the window
+smoothly from about 20° to about 70° with no visible warping, and the
+landmarks stay locked with one eye in frame.
+
 ## Phase 1b — the window, from Swarm
 
 - Load `world.json` and `scene.glb` from a Swarm reference (local Bee or

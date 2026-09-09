@@ -133,3 +133,48 @@ Exit: error table; slider works; decision on whether to ship the estimate
 alone or always ask for calibration.
 
 Result: _pending_
+
+---
+
+## S8 — Eye distance from the front camera
+
+Question: can the phone measure the distance from the screen to the user's
+eye well enough to drive the window geometry, down to the closest distance
+at which the eye can still focus on the screen (about 10 cm), including when
+only part of the face is in view?
+
+Method (D-27):
+
+- Iris diameter is the primary cue: 11.7 mm ± 0.5 across adults. With a
+  focal length `f` in pixels and a measured iris diameter `p` in pixels,
+  distance `d = f × 11.7 mm / p`. One visible iris is enough.
+- Interpupillary distance (about 63 mm, ±4 mm) is the cross-check when both
+  eyes are visible.
+- `f` is not exposed by browsers. Calibrate once: hold the phone at a known
+  distance (arm's length against the on-screen ruler, or the 40 cm default
+  pose) and store `f = p × d / 11.7`.
+- Landmarks from MediaPipe Face Landmarker (WASM, iris refinement on),
+  running at 5–10 inferences per second from a `getUserMedia` stream
+  requested at low resolution (640×480) and low `frameRate`. Between fixes,
+  the displacement integrator in `src/sensing/motion.ts` propagates the
+  distance along the screen normal; each fix resets its drift.
+
+Try, on the Pixel 7a in Vanadium:
+
+1. Log iris pixel diameter and reported distance at 40, 30, 20, 15, 10 and
+   7 cm (ruler on the table, phone on a stand, eye at the marks).
+2. At each distance note whether the face detector still fires when the
+   frame shows: full face; eyes and nose only; one eye only.
+3. Measure end-to-end latency (film the phone and a stopwatch, or step the
+   phone between two marks and count frames until the value settles) at
+   10 fps and 30 fps inference.
+4. Measure the frame rate of the three.js render while inference runs.
+5. Run five minutes and read the battery drain and thermal state.
+
+Exit: distance error under 10 % from 40 cm down to 10 cm; the estimator
+keeps working with one eye in frame; render stays at 60 fps with 10 fps
+inference; latency of the camera path recorded (the inertial bridge hides
+it). Or: the closest reliable distance is recorded and the window is
+clamped there.
+
+Result: _pending_

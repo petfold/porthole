@@ -70,6 +70,11 @@
 
 - Monado (OpenXR runtime), Basalt VIO, OpenVINS, ORB-SLAM3 — visual-inertial
   odometry if 6-DoF hand tracking is ever wanted
-- MediaPipe Face Landmarker (WASM) — head pose from the front camera for the
-  off-axis window and head-relative audio
+- MediaPipe Face Landmarker (WASM) — iris and face landmarks from the front
+  camera; the basis for eye distance (D-27, S8) and later head pose
+- Iris diameter as a metric reference: horizontal visible iris diameter is
+  11.7 ± 0.5 mm in adults (ophthalmic anthropometry); interpupillary
+  distance 63 ± 4 mm. Both are used in MediaPipe's own iris depth estimate.
+- Off-axis projection: Kooima, "Generalized Perspective Projection" (2008);
+  three.js `PerspectiveCamera.setViewOffset` / custom projection matrix
 - Zero-velocity updates (ZUPT) — for bounded short-range inertial translation

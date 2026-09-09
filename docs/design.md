@@ -117,12 +117,15 @@ vehicle coasts. A touch on screen is a brake: speed decays to zero while held.
 A flag in `world.json` may enable free flight later; controls then follow the
 RC-transmitter mapping (pitch/roll translate, yaw turns, push/pull throttles).
 
-**Rendering FOV.** The vertical field of view is computed from an assumed
-viewing distance of 40 cm and the screen's physical size. Browsers do not
-expose physical size, so the app estimates it from `devicePixelRatio` and a
-typical density, and exposes a one-time calibration slider ("match this
-ruler"). See D-05. The world is drawn as seen through a hole of that size;
-nothing is widened.
+**Rendering FOV.** The vertical field of view is computed from the viewing
+distance and the screen's physical size. Browsers do not expose physical
+size, so the app estimates it from `devicePixelRatio` and a typical density,
+and exposes a one-time calibration slider ("match this ruler"). See D-05.
+The world is drawn as seen through a hole of that size; nothing is widened.
+Phase 1a assumes 40 cm. Phase 1c (D-27) measures the eye position with the
+front camera — iris diameter as the size reference, inertial bridging
+between camera fixes — and renders an off-axis frustum from it, so the
+window widens naturally as the eye comes closer.
 
 ### 4.4 Presence and sync
 
@@ -272,8 +275,8 @@ at start. Later: `dappdata` / Sign-In with Ethereum for a stable identity
 
 - Spatial cells for discovery and interest management; earshot as a soft
   limit
-- Face tracking from the front camera: head pose relative to the phone, true
-  off-axis parallax, camera-based throttle
+- Head pose beyond eye position: gaze, head-relative audio; camera-based
+  throttle if D-28 goes that way (eye distance itself is Phase 1c, D-27)
 - Casting: phone as controller, TV or tablet as the window
 - Terrain and buildings from open data as 3D Tiles on Swarm; regional upgrades
 - Rollback reconciliation for objects; physics with input replication
