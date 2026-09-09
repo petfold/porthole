@@ -75,6 +75,9 @@
 - Iris diameter as a metric reference: horizontal visible iris diameter is
   11.7 ± 0.5 mm in adults (ophthalmic anthropometry); interpupillary
   distance 63 ± 4 mm. Both are used in MediaPipe's own iris depth estimate.
+- Eye optics: the centre of perspective is the entrance pupil, about 3 mm
+  behind the corneal apex; nodal points about 7 mm; centre of rotation about
+  13.5 mm (Gullstrand / Le Grand schematic eyes)
 - Off-axis projection: Kooima, "Generalized Perspective Projection" (2008);
   three.js `PerspectiveCamera.setViewOffset` / custom projection matrix
 - Zero-velocity updates (ZUPT) — for bounded short-range inertial translation

@@ -145,9 +145,12 @@ only part of the face is in view?
 
 Method (D-27):
 
-- Iris diameter is the primary cue: 11.7 mm ± 0.5 across adults. With a
-  focal length `f` in pixels and a measured iris diameter `p` in pixels,
-  distance `d = f × 11.7 mm / p`. One visible iris is enough.
+- Iris diameter is the primary cue: 11.7 mm ± 0.5 across adults (visible
+  diameter, as seen through the cornea). With a focal length `f` in pixels
+  and a measured iris diameter `p` in pixels, distance `d = f × 11.7 mm / p`.
+  One visible iris is enough. The distance is to the entrance pupil (about
+  3 mm behind the cornea), which is also the eye's centre of perspective, so
+  the measured point is the viewpoint with no offset correction.
 - Interpupillary distance (about 63 mm, ±4 mm) is the cross-check when both
   eyes are visible.
 - `f` is not exposed by browsers. Calibrate once: hold the phone at a known
