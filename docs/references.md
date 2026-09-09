@@ -36,6 +36,12 @@
   mapping is the same DeviceOrientationControls construction porthole uses.
   Shows the "phone as controller, other screen as window" split that
   design §10 lists under casting.
+- Meinhard's answers (Signal, 2026-09-09): has not tried Swarm feeds or GSOC
+  for rendezvous yet — wanted to build without restrictions first. Gossipsub
+  over WebRTC on phones: join time very fast, no unrecoverable dropouts, no
+  noticeable battery drain, but not tested much in the wild. Open to a call
+  to compare notes. Implication for porthole: Phase 2 join latency over
+  Swarm feeds (spike S2) is the number to compare against his relay setup.
 
 ## Swarm
 
