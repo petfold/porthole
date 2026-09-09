@@ -184,4 +184,32 @@ inference; latency of the camera path recorded (the inertial bridge hides
 it). Or: the closest reliable distance is recorded and the window is
 clamped there.
 
-Result: _pending_
+Result (session 1, 2026-09-09, Pixel 7a, Vanadium/Chromium 152, capture
+480×640, GPU delegate on the main thread; `?calibrate` screen, five taps per
+distance with an A4 sheet; analysis `node scripts/s8-analyse.mjs`):
+
+| true cm | iris px | pupil spacing px | f from iris | f from spacing |
+|---|---|---|---|---|
+| 29.7 | 22.4 ± 0.4 | 107.7 ± 1.2 | 567 | 505 |
+| 21.0 | 26.7 ± 0.9 | 140.3 ± 2.1 | 479 | 468 |
+
+- **Inference 245 ms per frame** on the GPU delegate, i.e. 4 fixes/s and a
+  blocked render loop. Inference moved to a worker; delegate now chosen by
+  timing GPU and CPU on the device (D-30 amended).
+- **Iris cue compresses**: from 29.7 to 21 cm the iris grew 19 %, geometry
+  says 41 %. A focal length fitted at 29.7 cm predicts 24.9 cm at 21 cm
+  (+19 %). Pupil spacing grew 30 % (predicts 22.7 cm, +8 %) and its noise
+  was half. The chosen eye flipped to the left at 21 cm and the two irises
+  differed by 13 %, consistent with the head turned about 20° towards the
+  phone, which shrinks the spacing cue but not the iris cue — so part of the
+  spacing error is head turn and part of the iris error is the model.
+- Decision: pupil spacing corrected for head turn (from the model's pose
+  matrix) is the primary cue; the iris cue is rescaled against it whenever
+  both eyes are in frame and carries on alone otherwise. Default focal
+  length for this phone 0.76 × longest capture side (486 px at 640).
+- Session 2 planned: three distances (21.0, 29.7, A4 diagonal 36.4), head
+  square to the camera, worker inference; verify the spacing cue within
+  10 % and record GPU vs CPU timing.
+
+Not yet measured: latency, one-eye tracking at close range, render fps
+with inference (session 1 render was visibly jerky at 245 ms blocking).

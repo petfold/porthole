@@ -193,8 +193,12 @@ export class Hud {
     const vf = this.d.window.verticalFovDeg;
     const live = `eye ${(e.eye.z * 100).toFixed(1)} cm · x ${(e.eye.x * 100).toFixed(1)} y ${(e.eye.y * 100).toFixed(1)} cm · ` +
       `window ${(2 * Math.atan((this.d.window.viewportMm.h / 1000 / 2) / e.eye.z) * 180 / Math.PI).toFixed(0)}° (was ${vf.toFixed(0)}° at 40 cm)`;
-    this.eyeInfo.textContent = `${e.status} · ${e.delegate} · ${e.rate.hz}/s · ${e.inferenceMs.toFixed(0)} ms · f ${e.focalPx.toFixed(0)} px\n${live}` +
-      (f ? `\nfix: ${f.eye} eye · iris ${f.irisPx.toFixed(1)} px → ${(f.z * 100).toFixed(1)} cm · IPD → ${f.ipdDistance ? (f.ipdDistance * 100).toFixed(1) + ' cm' : '—'}` : '');
+    const dm = e.delegateMs;
+    this.eyeInfo.textContent = `${e.status} · ${e.delegate} · ${e.rate.hz}/s · ${e.inferenceMs.toFixed(0)} ms` +
+      (dm.GPU || dm.CPU ? ` (GPU ${dm.GPU?.toFixed(0) ?? '?'} / CPU ${dm.CPU?.toFixed(0) ?? '?'} ms)` : '') +
+      ` · f ${e.focalPx.toFixed(0)} px\n${live}` +
+      (f ? `\nfix: ${f.eye} eye · ${f.cue} cue · pupils ${f.ipdCorrPx.toFixed(1)} px → ${f.zIpd ? (f.zIpd * 100).toFixed(1) + ' cm' : '—'} · ` +
+        `iris ${f.irisPx.toFixed(1)} px ×${e.irisScale.toFixed(2)} → ${(f.zIris * 100).toFixed(1)} cm · head ${(Math.acos(Math.min(1, f.foreshorten)) * 180 / Math.PI).toFixed(0)}°` : '');
   }
 
   private updatePanel(): void {

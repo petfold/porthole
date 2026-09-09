@@ -10,6 +10,7 @@ import { EyeTracker, IRIS_MM, IPD_MM } from '../sensing/eye';
 const TARGETS = [
   { label: 'A4 long edge', cm: 29.7 },
   { label: 'A4 short edge', cm: 21.0 },
+  { label: 'A4 diagonal (fold corner to corner)', cm: 36.4 },
 ];
 const PER_TARGET = 5;
 
@@ -21,8 +22,9 @@ export async function calibrationMode(): Promise<void> {
   root.style.pointerEvents = 'auto';
   root.innerHTML = `
     <h1>Eye distance calibration</h1>
-    <p class="how">Hold the phone upright, screen towards you. Put one end of the sheet's edge on the screen and the other
-    under your eye. Hold still one second, then tap the button for that edge. Do each five times.</p>
+    <p class="how">Hold the phone upright at eye level, screen towards you, and look straight at the camera with your
+    head square to it. Put one end of the sheet's edge on the screen and the other under your eye. Hold still one
+    second, then tap the button for that edge. Do each five times.</p>
     <div class="live">starting camera…</div>
     <div class="buttons"></div>
     <div class="log"></div>
@@ -47,7 +49,7 @@ export async function calibrationMode(): Promise<void> {
     b.textContent = `${t.label} · ${t.cm} cm · 0/${PER_TARGET}`;
     b.onclick = async () => {
       const f = eyes.fix;
-      const r = eyes.recentIris(1500);
+      const r = eyes.recentSizes(1500);
       if (!f || r.n < 5 || performance.now() - f.t > 700) {
         log.textContent = 'No steady face in view. Hold still with the phone facing you and try again.';
         navigator.vibrate?.([30, 40, 30]);
@@ -59,20 +61,28 @@ export async function calibrationMode(): Promise<void> {
         t: new Date().toISOString(),
         trueDistanceCm: t.cm,
         label: t.label,
-        irisMedianPx: r.median,
+        irisMedianPx: r.iris,
+        ipdCorrMedianPx: r.ipd,
         irisSamples: r.n,
         irisLeftPx: f.irisLeftPx,
         irisRightPx: f.irisRightPx,
         ipdPx: f.ipdPx,
+        ipdCorrPx: f.ipdCorrPx,
+        foreshorten: f.foreshorten,
+        bothVisible: f.bothVisible,
+        headTz: f.headTz,
         chosenEye: f.eye,
         capture: eyes.captureSize,
         screenCss: { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio },
         inferenceMs: eyes.inferenceMs,
         delegate: eyes.delegate,
+        delegateMs: eyes.delegateMs,
+        focalNormInUse: eyes.focalNorm,
         ua: navigator.userAgent,
         // Implied focal lengths, for a quick look: f = px × distance / size.
-        fFromIris: (r.median * t.cm) / (IRIS_MM / 10),
+        fFromIris: (r.iris * t.cm) / (IRIS_MM / 10),
         fFromIpd: (f.ipdPx * t.cm) / (IPD_MM / 10),
+        fFromIpdCorr: (r.ipd * t.cm) / (IPD_MM / 10),
       };
       const n = (counts.get(t.cm) ?? 0) + 1;
       counts.set(t.cm, n);
@@ -89,7 +99,7 @@ export async function calibrationMode(): Promise<void> {
         const res = await fetch(new URL('__record?name=s8-calibration', location.href), { method: 'POST', body: JSON.stringify(record) });
         sent = res.ok ? 'sent to dev machine' : `send failed (${res.status})`;
       } catch { sent = 'send failed (no dev server)'; }
-      log.textContent = `Recorded ${t.cm} cm: iris ${r.median.toFixed(1)} px, IPD ${f.ipdPx.toFixed(1)} px · ${sent}`;
+      log.textContent = `Recorded ${t.cm} cm: iris ${r.iris.toFixed(1)} px, pupil spacing ${r.ipd.toFixed(1)} px (head ${(Math.acos(Math.min(1, f.foreshorten)) * 180 / Math.PI).toFixed(0)}° off) · ${sent}`;
       navigator.vibrate?.(25);
     };
     buttons.appendChild(b);
@@ -97,10 +107,12 @@ export async function calibrationMode(): Promise<void> {
 
   const tick = () => {
     const f = eyes.fix;
-    const r = eyes.recentIris(1500);
+    const r = eyes.recentSizes(1500);
     const fresh = f && performance.now() - f.t < 700;
+    const head = f ? (Math.acos(Math.min(1, f.foreshorten)) * 180 / Math.PI) : 0;
     live.innerHTML = fresh
-      ? `<b>face found</b> · iris ${r.median.toFixed(1)} px (${r.n} samples) · ${eyes.delegate} · ${eyes.inferenceMs.toFixed(0)} ms · ${eyes.rate.hz}/s`
+      ? `<b>face found</b> · head ${head.toFixed(0)}° off axis${head > 12 ? ' <b class="warn">(face the camera)</b>' : ''} · ` +
+        `${eyes.delegate} ${eyes.inferenceMs.toFixed(0)} ms · ${eyes.rate.hz}/s · est. ${(f!.z * 100).toFixed(1)} cm`
       : `<b class="warn">${eyes.status}</b> · point the phone at your face`;
     live.classList.toggle('ok', !!fresh);
     requestAnimationFrame(tick);
