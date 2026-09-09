@@ -15,6 +15,28 @@
 - `galley` (collaborative Typst on Swarm) and `dappdata` — sibling projects
   with the same handoff structure; `dappdata` is the planned identity layer.
 
+## Related projects (seen 2026-09-09)
+
+- `mythos` (meinharrd) — <https://github.com/meinharrd/mythos>. Browser FPS in
+  three.js/TypeScript/Vite, everything procedural (geometry, textures, HRTF
+  audio). Multiplayer is **gun.js** with a relay on vibing.at, not Swarm:
+  each peer writes a flat `PeerState` at 15 Hz under a room node; damage is
+  "trust the shooter" as a cumulative counter per attacker (never per-hit
+  events, because LWW would drop them); replayed stale states filtered by
+  sender timestamp. Useful to porthole: `AGENTS.md` conventions (yaw 0 = −z,
+  forward = (−sin yaw, −cos yaw), same as ours; never add lights at runtime;
+  frozen shadow map), `RemoteAvatar` smoothing (exponential lerp, snap over
+  6 m), procedural human rig, `Touch.ts` joystick, headless `mp-bot` for
+  multiplayer testing without a second phone.
+- `vibing.at/phone` (meinharrd) — one phone streams `deviceorientation` at
+  25 Hz to a second browser that mirrors a 3D phone. Transport is
+  **libp2p gossipsub** over WebSocket/WebRTC via "pubrelay" boot nodes on
+  vibing.at (`createPubrelayNode`, `joinLive(channel)`), with role election
+  by join timestamp and 1 Hz heartbeats. The orientation → quaternion
+  mapping is the same DeviceOrientationControls construction porthole uses.
+  Shows the "phone as controller, other screen as window" split that
+  design §10 lists under casting.
+
 ## Swarm
 
 - Bee docs — <https://docs.ethswarm.org/>
