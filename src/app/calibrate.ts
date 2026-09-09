@@ -49,7 +49,8 @@ export async function calibrationMode(): Promise<void> {
 
   const counts = new Map<string, number>();
   const session = Math.random().toString(36).slice(2, 8);
-  const eyes = new EyeTracker({ rate: 20 });
+  const params = new URLSearchParams(location.search);
+  const eyes = new EyeTracker({ rate: 30, model: (params.get('model') as 'auto' | 'detector' | 'landmarker' | null) ?? 'auto' });
   try {
     await eyes.start();
   } catch (e) {
@@ -87,7 +88,14 @@ export async function calibrationMode(): Promise<void> {
         capture: eyes.captureSize,
         screenCss: { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio },
         inferenceMs: eyes.inferenceMs,
+        source: eyes.lastSource,
+        model: eyes.opts.model,
+        detectorMs: eyes.detectorMs,
+        detectorHz: eyes.detectorRate.hz,
+        landmarkerMs: eyes.landmarkerMs,
+        landmarkerHz: eyes.landmarkerRate.hz,
         delegate: eyes.delegate,
+        detectorDelegate: eyes.detectorDelegate,
         delegateMs: eyes.delegateMs,
         focalNormInUse: eyes.focalNorm,
         ua: navigator.userAgent,
@@ -136,7 +144,7 @@ export async function calibrationMode(): Promise<void> {
     const head = f ? (Math.acos(Math.min(1, f.foreshorten)) * 180 / Math.PI) : 0;
     live.innerHTML = fresh
       ? `<b>face found</b> · head ${head.toFixed(0)}° off axis${head > 12 ? ' <b class="warn">(face the camera)</b>' : ''} · ` +
-        `${eyes.delegate} ${eyes.inferenceMs.toFixed(0)} ms · ${eyes.rate.hz}/s · est. ${(f!.z * 100).toFixed(1)} cm`
+        `detector ${eyes.detectorMs.toFixed(1)} ms ${eyes.detectorRate.hz}/s · landmarker ${eyes.landmarkerMs.toFixed(0)} ms ${eyes.landmarkerRate.hz}/s (${eyes.delegate}) · est. ${(f!.z * 100).toFixed(1)} cm`
       : `<b class="warn">${eyes.status}</b> · point the phone at your face`;
     live.classList.toggle('ok', !!fresh);
     requestAnimationFrame(tick);

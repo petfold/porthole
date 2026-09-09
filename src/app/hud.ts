@@ -77,7 +77,7 @@ export class Hud {
         <div class="small">Hold the screen to brake; that also sets the base position.</div>
         <h2>Eye (S8)</h2>
         <label><input type="checkbox" class="eyes" /> Track the eye with the front camera</label>
-        <div>Rate <select class="eyerate"><option>5</option><option>10</option><option>15</option><option selected>20</option><option>30</option></select> /s</div>
+        <div>Rate <select class="eyerate"><option>5</option><option>10</option><option>15</option><option>20</option><option selected>30</option></select> /s</div>
         <div class="small">Calibrate once: hold the phone at a known distance from your eye for a second, then tap. An A4 sheet's long edge is 29.7 cm, its short edge 21.0 cm.</div>
         <button class="cal" data-cm="29.7">A4 long, 29.7 cm</button><button class="cal" data-cm="21.0">A4 short, 21.0 cm</button><button class="cal" data-cm="40">40 cm</button>
         <div class="eyeinfo"></div>
@@ -194,9 +194,10 @@ export class Hud {
     const live = `eye ${(e.eye.z * 100).toFixed(1)} cm · x ${(e.eye.x * 100).toFixed(1)} y ${(e.eye.y * 100).toFixed(1)} cm · ` +
       `window ${(2 * Math.atan((this.d.window.viewportMm.h / 1000 / 2) / e.eye.z) * 180 / Math.PI).toFixed(0)}° (was ${vf.toFixed(0)}° at 40 cm)`;
     const dm = e.delegateMs;
-    this.eyeInfo.textContent = `${e.status} · ${e.delegate} · ${e.rate.hz}/s · ${e.inferenceMs.toFixed(0)} ms` +
-      (dm.GPU || dm.CPU ? ` (GPU ${dm.GPU?.toFixed(0) ?? '?'} / CPU ${dm.CPU?.toFixed(0) ?? '?'} ms)` : '') +
-      ` · f ${e.focalPx.toFixed(0)} px\n${live}` +
+    this.eyeInfo.textContent = `${e.status} · fixes ${e.rate.hz}/s from ${e.lastSource}\n` +
+      `detector ${e.detectorMs.toFixed(1)} ms ${e.detectorRate.hz}/s (${e.detectorDelegate}) · landmarker ${e.landmarkerMs.toFixed(0)} ms ${e.landmarkerRate.hz}/s (${e.delegate}` +
+      (dm.GPU || dm.CPU ? `; GPU ${dm.GPU?.toFixed(0) ?? '?'} / CPU ${dm.CPU?.toFixed(0) ?? '?'} ms` : '') +
+      `) · f ${e.focalPx.toFixed(0)} px\n${live}` +
       (f ? `\nfix: ${f.eye} eye · ${f.cue} cue · pupils ${f.ipdCorrPx.toFixed(1)} px → ${f.zIpd ? (f.zIpd * 100).toFixed(1) + ' cm' : '—'} · ` +
         `iris ${f.irisPx.toFixed(1)} px ×${e.irisScale.toFixed(2)} → ${(f.zIris * 100).toFixed(1)} cm · head ${(Math.acos(Math.min(1, f.foreshorten)) * 180 / Math.PI).toFixed(0)}°` : '');
   }

@@ -10,13 +10,16 @@
  * when an eye leaves the frame. The measured point is the entrance pupil,
  * the eye's centre of perspective.
  *
- * Inference runs in a worker so the render loop never waits for it. The
+ * Inference runs in workers so the render loop never waits for it. Two
+ * models: BlazeFace (detector worker, about a millisecond) supplies the eye
+ * centres every frame; Face Landmarker (landmarker worker, slow on this
+ * phone) runs at a low duty cycle for the iris sizes and the head pose. Its
  * delegate (GPU or CPU) is chosen by measuring both on this device.
  *
  * Screen frame (also the device frame): x right, y up, z toward the user.
  */
 import { RateMeter } from './rate';
-import type { FaceResult, InMsg, OutMsg } from './eye.worker';
+import type { DetectResult, FaceResult, InMsg, OutMsg, Role } from './eye.worker';
 
 export const IRIS_MM = 11.7;
 export const IPD_MM = 63;
@@ -58,11 +61,17 @@ export interface EyeFix {
   t: number;
 }
 
+export type ModelMode = 'auto' | 'detector' | 'landmarker';
+
 export interface EyeTrackerOptions {
   rate: number;
   cameraOffset: { x: number; y: number };
   focalNorm: number | null;
   delegate: Delegate | 'auto';
+  /** 'auto': detector every frame + landmarker at low duty; or one model only (for S8 comparisons). */
+  model: ModelMode;
+  /** Landmarker duty cycle in 'auto' mode: fraction of wall time it may be busy. */
+  landmarkerDuty: number;
 }
 
 function clampAbs(v: number, m: number): number { return Math.max(-m, Math.min(m, v)); }
@@ -75,8 +84,16 @@ export class EyeTracker {
   private _status = 'off';
   get status(): string { return this._status; }
   set status(v: string) { if (v !== this._status) { this._status = v; console.info(`[eye] ${v}`); } }
+  /** Inference time of the last frame, per model. */
   inferenceMs = 0;
+  detectorMs = 0;
+  landmarkerMs = 0;
   delegate: Delegate | '-' = '-';
+  detectorDelegate: Delegate | '-' = '-';
+  /** Which model produced the last fix. */
+  lastSource: Role | '-' = '-';
+  readonly detectorRate = new RateMeter();
+  readonly landmarkerRate = new RateMeter();
   /** Mean inference time measured per delegate during auto-selection. */
   readonly delegateMs: Partial<Record<Delegate, number>> = {};
   focalNorm: number;
@@ -86,8 +103,16 @@ export class EyeTracker {
 
   private video: HTMLVideoElement | null = null;
   private stream: MediaStream | null = null;
-  private worker: Worker | null = null;
+  private worker: Worker | null = null;          // landmarker
+  private detWorker: Worker | null = null;       // detector
   private busy = false;
+  private detBusy = false;
+  private lmDoneT = 0;
+  private lmStartT = 0;
+  /** Latest head-turn foreshortening from the landmarker and when it was measured. */
+  private foreshorten = 1;
+  private foreshortenT = -Infinity;
+  private lastIris: { L: number; R: number; t: number } | null = null;
   private timer = 0;
   private lastVideoT = -1;
   private chosen: EyeSide = 'right';
@@ -103,7 +128,7 @@ export class EyeTracker {
   private captureH = 0;
 
   constructor(opts?: Partial<EyeTrackerOptions>) {
-    this.opts = { rate: 20, cameraOffset: { x: 0, y: 0.072 }, focalNorm: null, delegate: 'auto', ...opts };
+    this.opts = { rate: 30, cameraOffset: { x: 0, y: 0.072 }, focalNorm: null, delegate: 'auto', model: 'auto', landmarkerDuty: 0.25, ...opts };
     let stored: number | null = null;
     try { const v = localStorage.getItem(KEY_F); if (v) stored = parseFloat(v) || null; } catch { /* no storage */ }
     this.focalNorm = this.opts.focalNorm ?? stored ?? DEFAULT_FOCAL_NORM;
@@ -131,34 +156,52 @@ export class EyeTracker {
     this.captureW = video.videoWidth;
     this.captureH = video.videoHeight;
 
-    this.status = 'loading model';
-    this.worker = new Worker(new URL('./eye.worker.ts', import.meta.url), { type: 'module' });
-    this.worker.onmessage = (e: MessageEvent<OutMsg>) => this.onWorker(e.data);
-    const first: Delegate = this.opts.delegate === 'CPU' ? 'CPU' : 'GPU';
-    await this.init(first);
+    this.status = 'loading models';
+    const mode = this.opts.model;
+    if (mode !== 'detector') {
+      this.worker = new Worker(new URL('./eye.worker.ts', import.meta.url), { type: 'module' });
+      this.worker.onmessage = (e: MessageEvent<OutMsg>) => this.onWorker(e.data);
+      const first: Delegate = this.opts.delegate === 'CPU' ? 'CPU' : 'GPU';
+      await this.init(this.worker, 'landmarker', first);
+      if (this.opts.delegate === 'auto') this.probe = { delegate: first, ms: [] };
+    }
+    if (mode !== 'landmarker') {
+      this.detWorker = new Worker(new URL('./eye.worker.ts', import.meta.url), { type: 'module' });
+      this.detWorker.onmessage = (e: MessageEvent<OutMsg>) => this.onWorker(e.data);
+      try {
+        // The detector is cheap on the CPU; the GPU delegate only adds set-up and transfer cost.
+        await this.init(this.detWorker, 'detector', this.opts.delegate === 'GPU' ? 'GPU' : 'CPU');
+      } catch (e) {
+        console.warn('[eye] detector unavailable, landmarker only:', (e as Error).message);
+        this.detWorker.terminate();
+        this.detWorker = null;
+        if (!this.worker) throw e;
+      }
+    }
     this.tracking = true;
     this.status = 'tracking';
-    if (this.opts.delegate === 'auto') this.probe = { delegate: first, ms: [] };
     this.schedule();
   }
 
-  private init(delegate: Delegate): Promise<void> {
+  private init(w: Worker, role: Role, delegate: Delegate): Promise<void> {
     return new Promise((resolve, reject) => {
-      const w = this.worker;
-      if (!w) return reject(new Error('no worker'));
       const handler = (e: MessageEvent<OutMsg>) => {
-        if (e.data.type === 'ready') { w.removeEventListener('message', handler); this.delegate = e.data.delegate; resolve(); }
-        else if (e.data.type === 'error') {
+        if (e.data.type === 'ready' && e.data.role === role) {
           w.removeEventListener('message', handler);
-          if (delegate === 'GPU') { console.warn('[eye] GPU delegate failed, using CPU:', e.data.message); this.init('CPU').then(resolve, reject); }
+          if (role === 'landmarker') this.delegate = e.data.delegate; else this.detectorDelegate = e.data.delegate;
+          resolve();
+        } else if (e.data.type === 'error' && e.data.role === role) {
+          w.removeEventListener('message', handler);
+          if (delegate === 'GPU') { console.warn(`[eye] ${role} GPU delegate failed, using CPU:`, e.data.message); this.init(w, role, 'CPU').then(resolve, reject); }
           else reject(new Error(e.data.message));
         }
       };
       w.addEventListener('message', handler);
       const msg: InMsg = {
         type: 'init',
+        role,
         wasmBase: new URL('./mediapipe/wasm', document.baseURI).href,
-        modelPath: new URL('./models/face_landmarker.task', document.baseURI).href,
+        modelPath: new URL(role === 'landmarker' ? './models/face_landmarker.task' : './models/blaze_face_short_range.tflite', document.baseURI).href,
         delegate,
       };
       w.postMessage(msg);
@@ -168,9 +211,10 @@ export class EyeTracker {
   stop(): void {
     this.tracking = false;
     clearTimeout(this.timer);
-    this.worker?.postMessage({ type: 'close' } as InMsg);
-    this.worker?.terminate();
+    for (const w of [this.worker, this.detWorker]) { w?.postMessage({ type: 'close' } as InMsg); w?.terminate(); }
     this.worker = null;
+    this.detWorker = null;
+    this.detBusy = false;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
     this.video = null;
@@ -184,31 +228,57 @@ export class EyeTracker {
     this.timer = window.setTimeout(() => { void this.grab(); this.schedule(); }, 1000 / this.opts.rate);
   }
 
-  /** Capture a frame and hand it to the worker, unless it is still busy with the last one. */
+  /** Capture a frame for each worker that is idle and due. */
   private async grab(): Promise<void> {
     const v = this.video;
-    if (!v || !this.worker || this.busy || v.readyState < 2 || v.currentTime === this.lastVideoT) return;
+    if (!v || v.readyState < 2 || v.currentTime === this.lastVideoT) return;
+    const now = performance.now();
+    const wantDet = !!this.detWorker && !this.detBusy;
+    // Landmarker: always when it is the only model; otherwise keep its duty cycle bounded.
+    let wantLm = !!this.worker && !this.busy;
+    if (wantLm && this.detWorker) {
+      const lastCost = this.lmDoneT - this.lmStartT;
+      const idleFor = now - this.lmDoneT;
+      wantLm = this.probe !== null || idleFor >= Math.max(250, lastCost * (1 / this.opts.landmarkerDuty - 1));
+    }
+    if (!wantDet && !wantLm) return;
     this.lastVideoT = v.currentTime;
-    this.busy = true;
     try {
-      const bitmap = await createImageBitmap(v);
-      const msg: FrameMsg = { type: 'frame', bitmap, t: performance.now() };
-      this.worker.postMessage(msg, [bitmap]);
+      if (wantDet) {
+        this.detBusy = true;
+        const bitmap = await createImageBitmap(v);
+        const msg: FrameMsg = { type: 'frame', bitmap, t: now };
+        this.detWorker!.postMessage(msg, [bitmap]);
+      }
+      if (wantLm) {
+        this.busy = true;
+        this.lmStartT = now;
+        const bitmap = await createImageBitmap(v);
+        const msg: FrameMsg = { type: 'frame', bitmap, t: now + 0.01 };
+        this.worker!.postMessage(msg, [bitmap]);
+      }
     } catch {
       this.busy = false;
+      this.detBusy = false;
     }
   }
 
   private onWorker(m: OutMsg): void {
     if (m.type !== 'result') return;
-    this.busy = false;
-    if (!this.tracking) return;
     const now = performance.now();
-    this.inferenceMs = m.ms;
-    this.rate.tick(now);
+    if (m.role === 'detector') { this.detBusy = false; this.detectorMs = m.ms; this.detectorRate.tick(now); }
+    else { this.busy = false; this.lmDoneT = now; this.landmarkerMs = m.ms; this.landmarkerRate.tick(now); if (this.probe && m.ms > 0) this.stepProbe(m.ms); }
+    if (!this.tracking) return;
     this.captureW = m.w; this.captureH = m.h;
-    if (this.probe && m.ms > 0) this.stepProbe(m.ms);
-    if (!m.face) {
+
+    // Landmarker output refreshes the head pose and iris sizes; it sets the fix only when there is no detector.
+    if (m.role === 'landmarker' && m.face) {
+      this.absorbLandmarks(m.face, m.w, m.h, now);
+      if (this.detWorker) return;
+    }
+    if (m.role === 'detector' && !m.det && this.worker && this.fix && now - this.lastFaceT < 400) return; // landmarker may still see it
+    const found = m.role === 'detector' ? !!m.det : !!m.face;
+    if (!found) {
       if (this.fix) {
         const gap = now - this.lastFaceT;
         this.status = gap < LOST_HOLD_MS ? 'no face · holding last' : 'no face · returning to default';
@@ -220,7 +290,81 @@ export class EyeTracker {
     if (this.fix && gap > 400) this.reacquiredT = now;
     this.lastFaceT = now;
     this.status = this.probe ? `tracking · timing ${this.probe.delegate}` : 'tracking';
-    this.measure(m.face, m.w, m.h, m.t);
+    this.lastSource = m.role;
+    this.inferenceMs = m.ms;
+    this.rate.tick(now);
+    if (m.role === 'detector') this.measureDetector(m.det!, m.w, m.h, m.t);
+    else this.measure(m.face!, m.w, m.h, m.t);
+  }
+
+  /** Head-turn foreshortening and iris sizes from a landmarker frame. */
+  private absorbLandmarks(face: FaceResult, W: number, H: number, now: number): void {
+    if (face.mat && face.mat.length === 16) {
+      const ax = face.mat[0]!, ay = face.mat[1]!, az = face.mat[2]!;
+      const len = Math.hypot(ax, ay, az) || 1;
+      this.foreshorten = Math.max(0.5, Math.hypot(ax, ay) / len);
+      this.foreshortenT = now;
+    }
+    const size = (pts: [number, number][]) => {
+      const p = pts.map(([x, y]) => ({ u: x * W, v: y * H }));
+      const [, r, t, l, b] = p as [typeof p[0], typeof p[0], typeof p[0], typeof p[0], typeof p[0]];
+      return Math.max(Math.hypot(r.u - l.u, r.v - l.v), Math.hypot(t.u - b.u, t.v - b.v));
+    };
+    this.lastIris = { L: size(face.left), R: size(face.right), t: now };
+  }
+
+  /** Fix from the detector's two eye centres: the pupil-spacing cue, head turn from the last landmarker frame. */
+  private measureDetector(d: DetectResult, W: number, H: number, t0: number): void {
+    const now = performance.now();
+    const f = this.focalPx;
+    const [a, b] = d.eyes;
+    const A = { u: a[0] * W, v: a[1] * H }, B = { u: b[0] * W, v: b[1] * H };
+    const ipdPx = Math.hypot(A.u - B.u, A.v - B.v);
+    const foreshorten = now - this.foreshortenT < 2000 ? this.foreshorten : 1;
+    const ipdCorrPx = ipdPx / foreshorten;
+    if (ipdCorrPx < 5) return;
+    const z = (f * IPD_MM) / 1000 / ipdCorrPx;
+    // D-29: the eye nearest the screen's centre axis. Image-left eye is the subject's right eye (unmirrored camera).
+    const axisU = W / 2 - (f * this.opts.cameraOffset.x) / z;
+    const axisV = H / 2 + (f * this.opts.cameraOffset.y) / z;
+    const dA = Math.hypot(A.u - axisU, A.v - axisV), dB = Math.hypot(B.u - axisU, B.v - axisV);
+    const sideA: EyeSide = 'right', sideB: EyeSide = 'left';
+    const other: EyeSide = this.chosen === 'left' ? 'right' : 'left';
+    const otherNearer = other === sideA ? dA < dB - 0.2 * ipdPx : dB < dA - 0.2 * ipdPx;
+    if (otherNearer) {
+      if (!this.switchSince) this.switchSince = now;
+      if (now - this.switchSince > 300) { this.chosen = other; this.switchSince = 0; }
+    } else this.switchSince = 0;
+    const E = this.chosen === sideA ? A : B;
+    void sideB;
+    const x = -((E.u - W / 2) / f) * z + this.opts.cameraOffset.x;
+    const y = -((E.v - H / 2) / f) * z + this.opts.cameraOffset.y;
+    const iris = this.lastIris && now - this.lastIris.t < 3000 ? this.lastIris : null;
+    const irisPx = iris ? (this.chosen === 'left' ? iris.L : iris.R) : 0;
+    const zIrisRaw = irisPx > 1 ? (f * IRIS_MM) / 1000 / irisPx : z;
+    if (irisPx > 1) this.irisScale += (z / zIrisRaw - this.irisScale) * 0.1;
+    this.setFix({
+      x, y, z, eye: this.chosen, cue: 'ipd', irisPx, irisLeftPx: iris?.L ?? 0, irisRightPx: iris?.R ?? 0,
+      ipdPx, ipdCorrPx, foreshorten, bothVisible: true, zIpd: z, zIris: zIrisRaw * this.irisScale, headTz: null, headMat: null, t: t0,
+    }, ipdCorrPx, irisPx, now);
+  }
+
+  /** Common tail: velocity from the previous fix, sample history, inertial bridge anchor. */
+  private setFix(fix: Omit<EyeFix, 'vx' | 'vy' | 'vz'>, ipdCorrPx: number, irisPx: number, now: number): void {
+    const prev = this.fix;
+    const dtFix = prev ? (fix.t - prev.t) / 1000 : 0;
+    let vx = 0, vy = 0, vz = 0;
+    if (prev && dtFix > 0.01 && dtFix < 0.3) {
+      const phoneMoved = this.displacement() - this.bridgeAtFix;
+      vx = clampAbs((fix.x - prev.x) / dtFix, 1.5);
+      vy = clampAbs((fix.y - prev.y) / dtFix, 1.5);
+      vz = clampAbs((fix.z - phoneMoved - prev.z) / dtFix, 1.5);
+    }
+    this.fix = { ...fix, vx, vy, vz };
+    this.sizeSamples.push({ iris: irisPx, ipd: ipdCorrPx, t: now });
+    if (this.sizeSamples.length > 60) this.sizeSamples.shift();
+    this.bridgeAtFix = this.displacement();
+    this.bridgeBase = fix.z;
   }
 
   /** Auto delegate selection: time 8 frames on GPU, then 8 on CPU, keep the faster. */
@@ -231,15 +375,17 @@ export class EyeTracker {
     const mean = p.ms.reduce((a, b) => a + b, 0) / p.ms.length;
     this.delegateMs[p.delegate] = mean;
     const other: Delegate = p.delegate === 'GPU' ? 'CPU' : 'GPU';
+    const w = this.worker;
+    if (!w) { this.probe = null; return; }
     if (this.delegateMs[other] === undefined) {
       this.probe = { delegate: other, ms: [] };
-      void this.init(other).catch(() => { this.probe = null; });
+      void this.init(w, 'landmarker', other).catch(() => { this.probe = null; });
       return;
     }
     this.probe = null;
     const best: Delegate = (this.delegateMs.GPU ?? Infinity) <= (this.delegateMs.CPU ?? Infinity) ? 'GPU' : 'CPU';
-    console.info(`[eye] delegate timing GPU ${this.delegateMs.GPU?.toFixed(0)} ms, CPU ${this.delegateMs.CPU?.toFixed(0)} ms → ${best}`);
-    if (best !== this.delegate) void this.init(best).catch(() => { /* keep current */ });
+    console.info(`[eye] landmarker timing GPU ${this.delegateMs.GPU?.toFixed(0)} ms, CPU ${this.delegateMs.CPU?.toFixed(0)} ms → ${best}; detector ${this.detectorMs.toFixed(1)} ms on ${this.detectorDelegate}`);
+    if (best !== this.delegate) void this.init(w, 'landmarker', best).catch(() => { /* keep current */ });
   }
 
   private measure(face: FaceResult, W: number, H: number, t0: number): void {
@@ -296,23 +442,10 @@ export class EyeTracker {
     const x = -((E.u - W / 2) / f) * z + this.opts.cameraOffset.x;
     const y = -((E.v - H / 2) / f) * z + this.opts.cameraOffset.y;
 
-    const prev = this.fix;
-    const dtFix = prev ? (t0 - prev.t) / 1000 : 0;
-    let vx = 0, vy = 0, vz = 0;
-    if (prev && dtFix > 0.01 && dtFix < 0.3) {
-      const phoneMoved = this.displacement() - this.bridgeAtFix;
-      vx = clampAbs((x - prev.x) / dtFix, 1.5);
-      vy = clampAbs((y - prev.y) / dtFix, 1.5);
-      vz = clampAbs((z - phoneMoved - prev.z) / dtFix, 1.5);
-    }
-    this.fix = {
-      x, y, z, vx, vy, vz, eye: this.chosen, cue: zIpd !== null ? 'ipd' : 'iris',
+    this.setFix({
+      x, y, z, eye: this.chosen, cue: zIpd !== null ? 'ipd' : 'iris',
       irisPx: E.d, irisLeftPx: L.d, irisRightPx: R.d, ipdPx, ipdCorrPx, foreshorten, bothVisible, zIpd, zIris, headTz, headMat: face.mat, t: t0,
-    };
-    this.sizeSamples.push({ iris: E.d, ipd: ipdCorrPx, t: now });
-    if (this.sizeSamples.length > 60) this.sizeSamples.shift();
-    this.bridgeAtFix = this.displacement();
-    this.bridgeBase = z;
+    }, ipdCorrPx, E.d, now);
   }
 
   /** Median iris and corrected pupil-spacing sizes (px) over the last `ms`. */

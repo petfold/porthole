@@ -16,14 +16,20 @@ for (const f of ['vision_wasm_internal.js', 'vision_wasm_internal.wasm']) {
 }
 
 const modelDir = resolve('public/models');
-const model = resolve(modelDir, 'face_landmarker.task');
 mkdirSync(modelDir, { recursive: true });
-if (!existsSync(model) || statSync(model).size < 1_000_000) {
-  const url = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
-  console.error(`Downloading ${url}`);
-  const res = await fetch(url);
-  if (!res.ok) { console.error(`download failed: ${res.status}`); process.exit(1); }
-  const { writeFileSync } = await import('node:fs');
-  writeFileSync(model, Buffer.from(await res.arrayBuffer()));
+const MODELS = [
+  ['face_landmarker.task', 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task', 1_000_000],
+  ['blaze_face_short_range.tflite', 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite', 100_000],
+];
+const { writeFileSync } = await import('node:fs');
+for (const [name, url, minSize] of MODELS) {
+  const model = resolve(modelDir, name);
+  if (!existsSync(model) || statSync(model).size < minSize) {
+    console.error(`Downloading ${url}`);
+    const res = await fetch(url);
+    if (!res.ok) { console.error(`download failed: ${res.status}`); process.exit(1); }
+    writeFileSync(model, Buffer.from(await res.arrayBuffer()));
+  }
+  console.error(`model ready: ${model} (${(statSync(model).size / 1e6).toFixed(2)} MB)`);
 }
-console.error(`assets ready: ${wasmDst}, ${model} (${(statSync(model).size / 1e6).toFixed(1)} MB)`);
+console.error(`wasm ready: ${wasmDst}`);
