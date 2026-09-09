@@ -199,7 +199,7 @@ export class Hud {
       (dm.GPU || dm.CPU ? `; GPU ${dm.GPU?.toFixed(0) ?? '?'} / CPU ${dm.CPU?.toFixed(0) ?? '?'} ms` : '') +
       `) · f ${e.focalPx.toFixed(0)} px\n${live}` +
       (f ? `\nfix: ${f.eye} eye · ${f.cue} cue · pupils ${f.ipdCorrPx.toFixed(1)} px → ${f.zIpd ? (f.zIpd * 100).toFixed(1) + ' cm' : '—'} · ` +
-        `iris ${f.irisPx.toFixed(1)} px ×${e.irisScale.toFixed(2)} → ${(f.zIris * 100).toFixed(1)} cm · head ${(Math.acos(Math.min(1, f.foreshorten)) * 180 / Math.PI).toFixed(0)}°` : '');
+        `iris ${f.irisPx.toFixed(1)} px ×${e.irisScale.toFixed(2)} → ${(f.zIris * 100).toFixed(1)} cm · head ${(Math.acos(Math.min(1, f.foreshorten)) * 180 / Math.PI).toFixed(0)}° · det×${e.detectorScale.toFixed(3)}` : '');
   }
 
   private updatePanel(): void {

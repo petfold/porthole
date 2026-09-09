@@ -26,6 +26,11 @@ Open `https://<this machine's LAN IP>:5173/` in Vanadium or Chrome on the
 phone and accept the self-signed certificate once (sensors need a secure
 context). Tap to start.
 
+Vanadium blocks two things per site by default that porthole needs: **Motion
+sensors** (looking around) and **JavaScript JIT** (eye tracking runs 8×
+slower without it). Tap the icon left of the address bar → Permissions, and
+allow both, plus Camera for eye tracking.
+
 - **Look:** turn the phone. The view has the screen's true angular size, so
   it is a small window, not a wide game camera.
 - **Go:** push the phone away from you. Pull to slow or reverse. Speed

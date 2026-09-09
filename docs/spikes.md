@@ -262,5 +262,34 @@ three distances × 5 and a head-pose block at 29.7 cm × 3):
   BlazeFace detector (six keypoints incl. both eye centres, about a
   millisecond) and keep the landmarker only for the iris fallback.
 
-Not yet measured: latency, one-eye tracking at close range, render fps
-with inference now that it is in a worker.
+Session 3 (2026-09-09, JIT allowed for the site in Vanadium, detector +
+landmarker workers, D-32; sheet end at the outer corner of the left eye):
+
+- **Speed with JIT**: detector 18–26 ms at 24–29 fixes/s; landmarker 57–77 ms
+  on the CPU (GPU 211 ms), running 3–4/s under its 25 % duty limit. The JIT
+  was the cause of the 250–1250 ms times; the app now has a fix on nearly
+  every camera frame.
+- **Detector spacing is steadier than the landmarker's**: 79.3 ± 0.4,
+  99.3 ± 0.3, 131.7 ± 1.1 px at 36.4, 29.7, 21.0 cm (sd 0.3–0.8 %), against
+  1–3 % for the landmarker's pupil centres in session 2.
+- **The two models measure different points**: detector keypoint spacing is
+  1.07–1.09× smaller than the landmarker's pupil spacing. The estimator now
+  learns this ratio online whenever both report within 400 ms (start 1.075).
+- **Geometry**: a plain inverse law fits the three distances to 3.4 %
+  (detector) / 2.1 % (landmarker); allowing for the camera 7.2 cm above the
+  point the sheet touched, or equivalently a +2–3 cm offset, brings both to
+  under 2 %. The app keeps the plain law with f = 0.77 × longest side and
+  the 1.075 detector scale, giving 36.4 → 36.4, 29.7 → 29.1, 21.0 → 21.9 cm.
+  S8's 10 % target is met over 21–36 cm.
+- **Pose block is confounded** here: with the sheet pinned at the left
+  eye's outer corner, turning the head moves the right eye and so the eye
+  midpoint (Peter's observation). Corrected spacing moved −10 %/+8 % for
+  right/left turns, plausibly a real midpoint depth change of 1–2 cm
+  amplified by the pivot being the neck, not the eye. Not usable to
+  validate the correction; repeat with the sheet at the nose bridge if it
+  matters. Chin up/down changed the corrected spacing by −5 %/+1 %, iris by
+  −10 %/0 %: the iris cue again suffers under downward gaze.
+
+Not yet measured: latency, one-eye tracking at close range (the detector
+needs most of the face in frame, so below about 15 cm the estimate will
+hold its last value), render fps with both workers running.

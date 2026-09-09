@@ -98,6 +98,8 @@ export async function calibrationMode(): Promise<void> {
         detectorDelegate: eyes.detectorDelegate,
         delegateMs: eyes.delegateMs,
         focalNormInUse: eyes.focalNorm,
+        detectorScale: eyes.detectorScale,
+        irisScale: eyes.irisScale,
         ua: navigator.userAgent,
         // Implied focal lengths, for a quick look: f = px × distance / size.
         fFromIris: (r.iris * cm) / (IRIS_MM / 10),

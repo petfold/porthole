@@ -99,6 +99,14 @@ export class EyeTracker {
   focalNorm: number;
   /** Ratio of the pupil-spacing distance to the raw iris distance, learned while both eyes are visible. */
   irisScale = 1;
+  /**
+   * The detector's eye keypoints sit closer together than the landmarker's
+   * pupil centres (S8 session 3: 1.07×). Learned online whenever both models
+   * report within a short interval; this is the starting value.
+   */
+  detectorScale = 1.075;
+  private lastLmSpacing: { px: number; t: number } | null = null;
+  private lastDetSpacing: { px: number; t: number } | null = null;
   readonly opts: EyeTrackerOptions;
 
   private video: HTMLVideoElement | null = null;
@@ -311,6 +319,15 @@ export class EyeTracker {
       return Math.max(Math.hypot(r.u - l.u, r.v - l.v), Math.hypot(t.u - b.u, t.v - b.v));
     };
     this.lastIris = { L: size(face.left), R: size(face.right), t: now };
+    // Pupil spacing from the landmarker, to keep the detector's spacing on the same scale.
+    const c = (pts: [number, number][]) => ({ u: pts[0]![0] * W, v: pts[0]![1] * H });
+    const l = c(face.left), r = c(face.right);
+    const spacing = Math.hypot(l.u - r.u, l.v - r.v) / (this.foreshortenT === now ? this.foreshorten : 1);
+    this.lastLmSpacing = { px: spacing, t: now };
+    if (this.lastDetSpacing && now - this.lastDetSpacing.t < 400 && this.lastDetSpacing.px > 5) {
+      const ratio = spacing / this.lastDetSpacing.px;
+      if (ratio > 0.8 && ratio < 1.3) this.detectorScale += (ratio - this.detectorScale) * 0.1;
+    }
   }
 
   /** Fix from the detector's two eye centres: the pupil-spacing cue, head turn from the last landmarker frame. */
@@ -319,8 +336,11 @@ export class EyeTracker {
     const f = this.focalPx;
     const [a, b] = d.eyes;
     const A = { u: a[0] * W, v: a[1] * H }, B = { u: b[0] * W, v: b[1] * H };
-    const ipdPx = Math.hypot(A.u - B.u, A.v - B.v);
+    const ipdRaw = Math.hypot(A.u - B.u, A.v - B.v);
     const foreshorten = now - this.foreshortenT < 2000 ? this.foreshorten : 1;
+    this.lastDetSpacing = { px: ipdRaw / foreshorten, t: now };
+    // Put the detector's keypoint spacing on the landmarker's pupil-centre scale.
+    const ipdPx = ipdRaw * this.detectorScale;
     const ipdCorrPx = ipdPx / foreshorten;
     if (ipdCorrPx < 5) return;
     const z = (f * IPD_MM) / 1000 / ipdCorrPx;
