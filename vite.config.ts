@@ -12,5 +12,5 @@ export default defineConfig({
   base: './',
   plugins: [https ? (basicSsl() as PluginOption) : undefined].filter(Boolean) as PluginOption[],
   server: { port: 5173, strictPort: true },
-  build: { target: 'es2022', sourcemap: true },
+  build: { target: 'es2022', sourcemap: true, chunkSizeWarningLimit: 800 },
 });

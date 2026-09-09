@@ -3,6 +3,7 @@ import { loadWorld } from '../world/manifest';
 import { View } from '../render/scene';
 import { chooseOrientation, rollOf, yawOf, type OrientationKind, type OrientationSource } from '../sensing/orientation';
 import { ThrottleGesture } from '../sensing/motion';
+import { SensorProbe } from '../sensing/probe';
 import { TouchControls } from '../sensing/touch';
 import { Vehicle, type SteerMode } from './vehicle';
 import { Hud } from './hud';
@@ -22,6 +23,7 @@ async function main(): Promise<void> {
   const view = new View(canvas, world);
   const vehicle = new Vehicle(undefined, world.ground.size / 2);
   const throttle = new ThrottleGesture();
+  const probe = new SensorProbe();
 
   // Draw the world behind the start screen so the first frame is instant.
   view.render();
@@ -34,6 +36,7 @@ async function main(): Promise<void> {
   let orientationLog: string[];
   ({ source: orientation, log: orientationLog } = await chooseOrientation(canvas, forceOrientation ?? undefined));
   throttle.start();
+  probe.start();
 
   const spawnHeading = THREE.MathUtils.degToRad(world.spawn.heading);
   const spawnPos = new THREE.Vector3(...world.spawn.position);
@@ -46,6 +49,7 @@ async function main(): Promise<void> {
     orientation: () => orientation,
     orientationLog: () => orientationLog,
     throttle,
+    probe,
     window: view.window,
     onMode: (m) => { vehicle.setMode(m, yawOf(orientation.quaternion)); hud.flash(`mode: ${m}`); },
     onRecentre: () => recentre(),
@@ -79,6 +83,7 @@ async function main(): Promise<void> {
     last = now;
     const q = orientation.quaternion;
     vehicle.update(dt, yawOf(q), rollOf(q));
+    probe.trackDrift(q, now);
 
     // Camera: rigid yaw of the world, then the phone's orientation; eye above the vehicle.
     camera.quaternion.copy(yawQ.setFromAxisAngle(Y, vehicle.viewOffset)).multiply(q);

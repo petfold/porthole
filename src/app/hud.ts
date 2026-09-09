@@ -8,12 +8,14 @@ import type { OrientationSource } from '../sensing/orientation';
 import type { ThrottleGesture } from '../sensing/motion';
 import type { WindowCamera } from '../render/camera';
 import type { SteerMode, Vehicle } from './vehicle';
+import type { SensorProbe } from '../sensing/probe';
 
 export interface HudDeps {
   vehicle: Vehicle;
   orientation: () => OrientationSource;
   orientationLog: () => string[];
   throttle: ThrottleGesture;
+  probe: SensorProbe;
   window: WindowCamera;
   onMode(mode: SteerMode): void;
   onRecentre(): void;
@@ -56,6 +58,7 @@ export class Hud {
         <input type="range" class="cal" min="0.6" max="1.6" step="0.005" />
         <div class="fov"></div>
         <h2>Sensors (S1, S6)</h2>
+        <button class="drift">Reset drift timer</button>
         <div class="dyn"></div>
       </div>`;
     this.status = root.querySelector('.status') as HTMLElement;
@@ -75,6 +78,7 @@ export class Hud {
     mode.onchange = () => d.onMode(mode.value as SteerMode);
     (root.querySelector('.recentre') as HTMLButtonElement).onclick = () => d.onRecentre();
     (root.querySelector('.respawn') as HTMLButtonElement).onclick = () => d.onRespawn();
+    (root.querySelector('.drift') as HTMLButtonElement).onclick = () => d.probe.resetDrift();
     this.slider.value = String(d.window.calibration);
     this.slider.oninput = () => { d.window.setCalibration(parseFloat(this.slider.value)); this.updateCalibration(); };
     // Stop panel touches from reaching the view (brake / recentre).
@@ -120,6 +124,7 @@ export class Hud {
   private updatePanel(): void {
     const t = this.d.throttle;
     const o = this.d.orientation();
+    const p = this.d.probe;
     const has = (n: string) => (n in window ? 'yes' : 'no');
     const rows: [string, string][] = [
       ['secure context', String(isSecureContext)],
@@ -132,7 +137,12 @@ export class Hud {
       ['deviceorientationabsolute', 'ondeviceorientationabsolute' in window ? 'yes' : 'no'],
       ['DeviceMotionEvent', has('DeviceMotionEvent')],
       ['orientation source', `${o.kind} · ${o.rate.hz} Hz · age ${o.rate.age.toFixed(0)} ms`],
-      ['devicemotion', t.available ? `${t.rate.hz} Hz · a_z ${t.az.toFixed(2)} · ${t.phase}` : 'no readings'],
+      ['yaw drift (rest the phone)', `${p.driftDeg >= 0 ? '+' : ''}${p.driftDeg.toFixed(2)}° over ${p.driftSeconds.toFixed(0)} s` +
+        (p.driftSeconds > 5 ? ` = ${((60 * p.driftDeg) / p.driftSeconds).toFixed(2)}°/min` : '')],
+      ['deviceorientation events', `${p.deviceorientation.hz} Hz · α ${p.alpha?.toFixed(1) ?? '—'}`],
+      ['deviceorientationabsolute events', `${p.deviceorientationabsolute.hz} Hz · α ${p.alphaAbsolute?.toFixed(1) ?? '—'}`],
+      ['devicemotion events', `${p.devicemotion.hz} Hz`],
+      ['throttle (devicemotion a_z)', t.available ? `a_z ${t.az.toFixed(2)} m/s² · ${t.phase}` : 'no readings'],
       ['screen.orientation', `${screen.orientation?.type ?? '?'} ${screen.orientation?.angle ?? '?'}°`],
       ['steer', `${((this.d.vehicle.steer * 180) / Math.PI).toFixed(0)}°`],
     ];

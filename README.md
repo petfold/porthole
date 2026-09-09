@@ -45,6 +45,18 @@ URL options: `?mode=look|yawrate|roll`, `?orientation=generic-sensor|deviceorien
 keys to throttle, space to brake, `R` to recentre, `Q`/`E` to bank (for the
 `roll` mode).
 
+## Publish to Swarm (Phase 1b, spike S4)
+
+Copy `.env.example` to `.env`, set `BEE_URL` and an immutable `BEE_STAMP`,
+then:
+
+```
+pnpm build
+pnpm publish:swarm
+```
+
+The script prints the collection reference and the `bzz` URLs to open.
+
 ## Worlds
 
 A world is a folder with a `world.json` (see `public/worlds/shapes/`). Phase
