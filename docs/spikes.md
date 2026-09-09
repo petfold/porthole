@@ -11,6 +11,14 @@ S1, S6 and S7 are run from inside the app (D-21): open the app with `?panel`
 impulses with their spread, and the FOV calibration. Copy the numbers into
 the result slots below.
 
+Raw measurements taken on the phone (S8 calibration taps, `?trace`
+recordings) are posted by the dev server to `spikes/records/*.jsonl`. That
+directory is kept locally and ignored by git (about 7.5 MB after five
+sessions on 2026-09-09); the summaries below are derived from it with
+`scripts/s8-analyse.mjs`, `scripts/s8-trace-analyse.mjs` and
+`scripts/s8-replay.ts`. Keep the files: every fusion change is re-validated
+against them before it goes near the phone.
+
 ---
 
 ## S1 — Sensor APIs in Vanadium on GrapheneOS
